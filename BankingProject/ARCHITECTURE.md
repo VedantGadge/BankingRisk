@@ -2,11 +2,9 @@
 
 ## Overview
 
-This project implements a **core banking transaction system** using a **modular monolith architecture** that mimics microservices.
+This project implements a core banking transaction system using a modular monolith architecture that mimics microservices.
 
 Each module is logically isolated and designed to be extracted into independent microservices in the future.
-
----
 
 ## Core Principles
 
@@ -18,49 +16,39 @@ Each module is logically isolated and designed to be extracted into independent 
 - Idempotent transaction processing
 - Clean layered architecture
 
----
-
 ## Module Structure
 
-```
-com.vedant.banking
-├── gateway/
-├── user/
-├── transaction/
-├── account/
-├── fraud/
-├── audit/
-├── notification/
-├── common/
-```
+    com.vedant.banking
+    ├── gateway/
+    ├── user/
+    ├── transaction/
+    ├── account/
+    ├── fraud/
+    ├── audit/
+    ├── notification/
+    └── common/
 
----
+## Layered Architecture
 
-## Layered Architecture (MANDATORY)
+All modules must follow:
 
-All modules MUST follow:
+    Controller → Service → Repository
 
-```
-Controller → Service → Repository
-```
+### Rules
 
-### Rules:
+- Controllers
+  - Handle HTTP requests only
+  - No business logic
+  - No database access
 
-- Controllers:
-    - Handle HTTP requests only
-    - No business logic
-    - No database access
+- Services
+  - Contain all business logic
+  - Coordinate between modules
+  - Call other services, not repositories of other modules
 
-- Services:
-    - Contain all business logic
-    - Coordinate between modules
-    - Call other services (NOT repositories of other modules)
-
-- Repositories:
-    - Only used within their own module
-    - No cross-module usage
-
----
+- Repositories
+  - Only used within their own module
+  - No cross-module usage
 
 ## Module Responsibilities
 
@@ -71,32 +59,24 @@ Controller → Service → Repository
 - Secures endpoints
 - Routes requests internally
 
----
-
 ### User Module (Auth)
 
 - Handles registration and login
 - Stores users in database
 - Generates JWT tokens
 
----
-
 ### Transaction Module
 
-- Creates transactions (INITIATED state)
+- Creates transactions in INITIATED state
 - Ensures idempotency using Redis
 - Publishes Kafka events
-- Does NOT update account balance directly
-
----
+- Does not update account balance directly
 
 ### Account Module
 
 - Manages balances
-- Handles debit/credit operations
+- Handles debit and credit operations
 - Only module allowed to modify balances
-
----
 
 ### Fraud Module
 
@@ -104,66 +84,143 @@ Controller → Service → Repository
 - Applies fraud detection rules
 - Publishes fraud decision events
 
----
-
 ### Audit Module
 
 - Logs all system events
 - Stores immutable history
 
----
-
 ### Notification Module
 
-- Sends notifications (mock email/SMS)
+- Sends notifications
 - Triggered by events
+- Email/SMS mock for now
 
----
+## Transfer System
 
-## Critical Rules (DO NOT BREAK)
+### Overview
 
-### 1. No Cross-Module DB Access
+Transfers move funds between accounts and must ensure:
 
-❌ WRONG:
-```
-transaction → accountRepository
-```
+- Atomicity
+- Consistency
+- Idempotency
+- Fraud validation
+- Event-driven execution
 
-✅ CORRECT:
-```
-transaction → accountService
-```
+### Transfer Request
 
----
+TransferRequest contains:
 
-### 2. Transaction != Balance Update
+- fromAccountId
+- toAccountId
+- amount
+- requestId for idempotency
 
-- Transaction module only creates transaction records
-- Account module performs actual debit/credit
+### Transfer Flow
 
----
+1. Client sends transfer request with JWT
+2. Gateway validates token
+3. Transaction module creates transaction in INITIATED state
+4. Transaction module stores idempotency key
+5. Transaction module publishes event: transaction.created
+6. Fraud module evaluates transaction
+7. Fraud module emits fraud.clean or fraud.suspected
+8. If fraud.clean:
+  - Account module debits fromAccount
+  - Account module credits toAccount
+  - Operation must be atomic
+9. Transaction module updates status to COMPLETED
+10. Audit module logs event
+11. Notification module sends confirmation
 
-### 3. Idempotency is Mandatory
+### Transfer States
 
-- All transaction requests must be idempotent
-- Use Redis key:
+- INITIATED
+- PENDING
+- COMPLETED
+- FAILED
+- REJECTED
 
-```
-idempotency:{userId}:{requestId}
-```
+### Critical Transfer Rules
 
----
+#### Atomicity
 
-### 4. Event-Driven Communication
+Debit and credit must happen together in one transaction.
 
-Use Kafka for:
+#### Balance Validation
+
+- No insufficient funds transfers
+- No negative balance
+
+#### Idempotency
+
+Duplicate transfers must be prevented.
+
+Redis key pattern:
+
+    idempotency:{userId}:{requestId}
+
+#### Module Isolation
+
+- Wrong: transaction → accountRepository
+- Correct: transaction → accountService
+
+#### Concurrency Safety
+
+Use one of:
+
+- Database locking
+- Optimistic locking with @Version
+
+## Updated Responsibilities
+
+### Account Module
+
+- Debit account
+- Credit account
+- Validate balance
+- Ensure transactional integrity
+- Handle concurrency
+
+### Transaction Module
+
+- Create transaction
+- Maintain state lifecycle
+- Ensure idempotency
+- Publish Kafka events
+
+## Kafka Events
 
 - transaction.created
 - fraud.clean
 - fraud.suspected
 - transaction.completed
+- transaction.failed
 
----
+## Critical Rules
+
+### 1. No Cross-Module DB Access
+
+Wrong:
+
+    transaction → accountRepository
+
+Correct:
+
+    transaction → accountService
+
+### 2. Transaction Does Not Mean Balance Update
+
+- Transaction module only creates transaction records
+- Account module performs actual debit and credit
+
+### 3. Idempotency is Mandatory
+
+- All transaction requests must be idempotent
+
+### 4. Event-Driven Communication
+
+- Use Kafka for async flows
 
 ### 5. No Business Logic in Controllers
 
@@ -173,29 +230,11 @@ Controllers must:
 - Call service layer
 - Return response
 
----
-
 ### 6. JWT-Based Security
 
 - All secured endpoints require JWT
 - Gateway validates token
 - User identity passed internally
-
----
-
-## Transaction Flow
-
-1. Client sends request with JWT
-2. Gateway validates token
-3. Transaction module creates transaction (INITIATED)
-4. Kafka event published
-5. Fraud module evaluates
-6. If clean:
-    - Account module debits/credits
-7. Transaction marked COMPLETED
-8. Audit + Notification triggered
-
----
 
 ## Communication Strategy
 
@@ -205,39 +244,32 @@ Controllers must:
 | Async events | Kafka |
 | External client | REST |
 
----
-
 ## Coding Guidelines
 
 - Use constructor injection
 - Use Lombok for boilerplate
-- Use DTOs (no entity exposure)
+- Use DTOs, not entities, in API responses
 - Handle exceptions globally
 - Use meaningful method names
 
----
-
 ## Naming Conventions
 
-- Service: `XxxService`
-- Implementation: `XxxServiceImpl`
-- Controller: `XxxController`
-- Repository: `XxxRepository`
-- DTO: `XxxRequest`, `XxxResponse`
-
----
+- Service: XxxService
+- Implementation: XxxServiceImpl
+- Controller: XxxController
+- Repository: XxxRepository
+- DTO: XxxRequest, XxxResponse
 
 ## Future Migration to Microservices
 
 This architecture supports easy migration by:
 
 - Extracting modules into separate services
-- Replacing method calls with REST/gRPC
+- Replacing method calls with REST or gRPC
 - Moving databases per service
-
----
 
 ## Golden Rule
 
-> Follow architecture strictly.  
-> If unsure, prioritize modular boundaries over shortcuts.
+Follow architecture strictly.
+
+If unsure, prioritize modular boundaries over shortcuts.

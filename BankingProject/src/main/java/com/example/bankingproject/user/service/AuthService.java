@@ -1,5 +1,6 @@
 package com.example.bankingproject.user.service;
 
+import com.example.bankingproject.common.security.JwtService;
 import com.example.bankingproject.user.dto.LoginRequest;
 import com.example.bankingproject.user.dto.RegisterRequest;
 import com.example.bankingproject.user.entity.User;
@@ -8,12 +9,15 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+
 @Service
 @RequiredArgsConstructor // injects dependencies
 public class AuthService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
 
     public void register(RegisterRequest request){
 
@@ -27,6 +31,7 @@ public class AuthService {
                 .email(request.getEmail())
                 .password(passwordEncoder.encode(request.getPassword()))
                 .role("USER")
+                .createdAt(LocalDateTime.now())
                 .build();
 
         //Save user
@@ -38,15 +43,14 @@ public class AuthService {
 
         //Check n fetch user
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("User does not exist!"));
+                .orElseThrow(() -> new IllegalStateException("User does not exist!"));
 
         // Check password
         if(!passwordEncoder.matches(request.getPassword(),user.getPassword())){
-            throw new RuntimeException("Invalid password!");
+            throw new RuntimeException("Invalid credentials");
         }
 
         //dummy token
-        return "dummy-jwt-token";
+        return jwtService.generateToken(user.getId().toString());
     }
-
 }
