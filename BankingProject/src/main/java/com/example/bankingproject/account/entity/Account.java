@@ -23,7 +23,7 @@ public class Account {
     @Column(nullable=false,unique=true)
     private Long userId;
 
-    @Column(nullable = false)
+    @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal balance; //BigDecimal makes exact decimal representation rather than double n float that might round off
 
     @Column(nullable = false)
