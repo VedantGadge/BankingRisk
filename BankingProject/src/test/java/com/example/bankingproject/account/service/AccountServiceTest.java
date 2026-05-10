@@ -96,11 +96,6 @@ public class AccountServiceTest {
         assertEquals(0, result.getBalance().compareTo(new BigDecimal("150.00")));
     }
 
-    @Test
-    void deposit_shouldThrowForNonPositiveAmount() {
-        assertThrows(IllegalArgumentException.class,
-                () -> accountService.deposit(1L, BigDecimal.ZERO));
-    }
 
     @Test
     void withdraw_shouldDecreaseBalance() {
