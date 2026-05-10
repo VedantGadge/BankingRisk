@@ -5,6 +5,10 @@ import com.example.bankingproject.account.entity.Account;
 import com.example.bankingproject.account.exception.AccountNotFoundException;
 import com.example.bankingproject.account.exception.InsufficientBalanceException;
 import com.example.bankingproject.account.repository.AccountRepository;
+import com.example.bankingproject.transaction.entity.Transaction;
+import com.example.bankingproject.transaction.enums.TransactionStatus;
+import com.example.bankingproject.transaction.enums.TransactionType;
+import com.example.bankingproject.transaction.repository.TransactionRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +22,7 @@ import java.math.BigDecimal;
 public class AccountService {
 
     private final AccountRepository accountRepo;
+    private final TransactionRepository transactionRepo;
 
     // to get account by userId
     public AccountResponse getAccount(Long userId){
@@ -50,6 +55,16 @@ public class AccountService {
         account.setBalance(account.getBalance().add(amount));
         Account updatedAccount = accountRepo.save(account);
 
+        // Create transaction record for deposit
+        Transaction tx = Transaction.builder()
+                .toUserId(userId)
+                .fromUserId(null) // null for deposits (no sender)
+                .amount(amount)
+                .type(TransactionType.DEPOSIT)
+                .status(TransactionStatus.COMPLETED)
+                .build();
+        transactionRepo.save(tx);
+
         log.info("Deposit successful for userId: {}, new balance: {}", userId, updatedAccount.getBalance());
         return mapToResponse(updatedAccount);
     }
@@ -76,6 +91,16 @@ public class AccountService {
 
         account.setBalance(account.getBalance().subtract(amount));
         Account updatedAccount = accountRepo.save(account);
+
+        // Create transaction record for withdrawal
+        Transaction tx = Transaction.builder()
+                .fromUserId(userId)
+                .toUserId(null) // null for withdrawals (no recipient)
+                .amount(amount)
+                .type(TransactionType.WITHDRAW)
+                .status(TransactionStatus.COMPLETED)
+                .build();
+        transactionRepo.save(tx);
 
         log.info("Withdrawal successful for userId: {}, new balance: {}", userId, updatedAccount.getBalance());
         return mapToResponse(updatedAccount);

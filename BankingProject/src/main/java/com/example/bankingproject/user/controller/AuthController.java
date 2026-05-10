@@ -11,16 +11,20 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 import java.util.Map;
 
 @RestController //Marks class as a REST API controller and Automatically returns in JSON
 @RequestMapping("/api/auth/")
 @RequiredArgsConstructor
+@Tag(name = "Authentication", description = "Auth APIs for login and registration")
 public class AuthController {
 
     private final AuthService authService;
 
+    @Operation(summary = "Register a new user")
     @PostMapping("/register")
     public Map<String, String> register(@Valid @RequestBody RegisterRequest request) {
 
@@ -29,6 +33,7 @@ public class AuthController {
 
     }
 
+    @Operation(summary = "Login and get JWT token")
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest login) {
 

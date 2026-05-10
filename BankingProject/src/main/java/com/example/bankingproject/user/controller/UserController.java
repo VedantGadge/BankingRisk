@@ -1,6 +1,7 @@
 package com.example.bankingproject.user.controller;
 
 
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -8,6 +9,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 @RestController // Tells Spring: this class handles HTTP requests and returns JSON responses
+@SecurityRequirement(name = "bearerAuth")
 public class UserController {
 
     @GetMapping("/api/user/me")

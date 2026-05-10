@@ -28,6 +28,8 @@ public class SecurityConfig {
                 .csrf(csrf-> csrf.disable()) // Disables CSRF protection (not needed for stateless JWT APIs)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll() // Allows unauthenticated access to auth endpoints (login/register)
+                        // Allow Swagger UI and OpenAPI docs without authentication
+                        .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/v3/api-docs", "/swagger-resources/**", "/webjars/**").permitAll()
                         .anyRequest().authenticated() // Requires authentication for all other endpoints
                 )
 
