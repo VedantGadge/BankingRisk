@@ -1,11 +1,14 @@
 package com.example.bankingproject.account.repository;
 
 import com.example.bankingproject.account.entity.Account;
+import io.lettuce.core.dynamic.annotation.Param;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 
+import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 
 public interface AccountRepository extends JpaRepository<Account,Long> {
@@ -21,5 +24,13 @@ public interface AccountRepository extends JpaRepository<Account,Long> {
     Optional<Account> findByUserIdForUpdate(long userId);
     //Uses pessimistic locking to prevent race conditions during concurrent withdrawals
     //Locks the row in the database until transaction completes
+
+    // Add to AccountRepository
+
+    @Query("""
+    SELECT COALESCE(MAX(a.balance), 0) FROM Account a 
+    WHERE a.userId IN :userIds
+    """)
+    BigDecimal findMaxBalanceAmongUsers(@Param("userIds") List<Long> userIds);
 
 }
