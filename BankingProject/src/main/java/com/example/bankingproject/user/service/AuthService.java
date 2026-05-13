@@ -11,6 +11,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.example.bankingproject.user.entity.LoginAudit;
+import com.example.bankingproject.user.enums.LoginStatus;
+import com.example.bankingproject.user.repository.LoginAuditRepository;
 
 import java.time.LocalDateTime;
 
@@ -23,6 +26,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AccountService accountService;
+    private final LoginAuditRepository loginAuditRepository;
 
     @Transactional
     public void register(RegisterRequest request){
@@ -52,21 +56,30 @@ public class AuthService {
 
     public String login(LoginRequest request){
 
-        //Check n fetch user
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> {
                     log.warn("Login attempt with non-existent email: {}", request.getEmail());
                     return new IllegalStateException("User does not exist!");
                 });
 
-        // Check password
-        if(!passwordEncoder.matches(request.getPassword(),user.getPassword())){
+        if(!passwordEncoder.matches(request.getPassword(), user.getPassword())){
             log.warn("Failed login attempt for user: {}", request.getEmail());
+
+            loginAuditRepository.save(LoginAudit.builder()
+                    .userId(user.getId())
+                    .status(LoginStatus.FAILED)
+                    .failureReason("INVALID_PASSWORD")
+                    .build());
+
             throw new RuntimeException("Invalid credentials");
         }
 
+        loginAuditRepository.save(LoginAudit.builder()
+                .userId(user.getId())
+                .status(LoginStatus.SUCCESS)
+                .build());
+
         log.info("User logged in successfully: {}", user.getId());
-        //Generate JWT token
         return jwtService.generateToken(user.getId().toString());
     }
 }

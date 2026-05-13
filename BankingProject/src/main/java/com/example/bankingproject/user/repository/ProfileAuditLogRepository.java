@@ -21,8 +21,4 @@ public interface ProfileAuditLogRepository extends JpaRepository<ProfileAuditLog
             @Param("since") LocalDateTime since
     );
 
-    List<ProfileAuditLog> findByUserIdAndCreatedAtGreaterThanOrderByCreatedAtDesc(
-            Long userId,
-            LocalDateTime createdAt
-    );
 }

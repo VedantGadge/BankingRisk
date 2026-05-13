@@ -5,16 +5,13 @@ import com.example.bankingproject.account.entity.Account;
 import com.example.bankingproject.account.exception.AccountNotFoundException;
 import com.example.bankingproject.account.exception.InsufficientBalanceException;
 import com.example.bankingproject.account.repository.AccountRepository;
-import com.example.bankingproject.transaction.entity.Transaction;
-import com.example.bankingproject.transaction.enums.TransactionStatus;
-import com.example.bankingproject.transaction.enums.TransactionType;
-import com.example.bankingproject.transaction.repository.TransactionRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 
 @Service
 @RequiredArgsConstructor
@@ -22,7 +19,6 @@ import java.math.BigDecimal;
 public class AccountService {
 
     private final AccountRepository accountRepo;
-    private final TransactionRepository transactionRepo;
 
     // to get account by userId
     public AccountResponse getAccount(Long userId){
@@ -51,19 +47,15 @@ public class AccountService {
     public AccountResponse deposit(long userId, BigDecimal amount){
         log.info("User {} attempting deposit of {}", userId, amount);
 
-        Account account = getAccountInternal(userId);
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Amount must be greater than zero");
+        }
+
+        Account account = accountRepo.findByUserIdForUpdate(userId)
+                .orElseThrow(() -> new AccountNotFoundException("Account not found for userId: " + userId));
         account.setBalance(account.getBalance().add(amount));
         Account updatedAccount = accountRepo.save(account);
 
-        // Create transaction record for deposit
-        Transaction tx = Transaction.builder()
-                .toUserId(userId)
-                .fromUserId(null) // null for deposits (no sender)
-                .amount(amount)
-                .type(TransactionType.DEPOSIT)
-                .status(TransactionStatus.COMPLETED)
-                .build();
-        transactionRepo.save(tx);
 
         log.info("Deposit successful for userId: {}, new balance: {}", userId, updatedAccount.getBalance());
         return mapToResponse(updatedAccount);
@@ -72,6 +64,10 @@ public class AccountService {
     @Transactional
     public AccountResponse withdraw(long userId, BigDecimal amount){
         log.info("User {} attempting withdrawal of {}", userId, amount);
+
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Amount must be greater than zero");
+        }
 
         // Use pessimistic locking to prevent race conditions
         Account account = accountRepo.findByUserIdForUpdate(userId)
@@ -92,15 +88,6 @@ public class AccountService {
         account.setBalance(account.getBalance().subtract(amount));
         Account updatedAccount = accountRepo.save(account);
 
-        // Create transaction record for withdrawal
-        Transaction tx = Transaction.builder()
-                .fromUserId(userId)
-                .toUserId(null) // null for withdrawals (no recipient)
-                .amount(amount)
-                .type(TransactionType.WITHDRAW)
-                .status(TransactionStatus.COMPLETED)
-                .build();
-        transactionRepo.save(tx);
 
         log.info("Withdrawal successful for userId: {}, new balance: {}", userId, updatedAccount.getBalance());
         return mapToResponse(updatedAccount);
@@ -120,6 +107,27 @@ public class AccountService {
                 .createdAt(account.getCreatedAt())
                 .build();
     }
+
+    public BigDecimal getCurrentBalance(Long userId) {
+        return accountRepo.findBalanceByUserId(userId);
+    }
+
+    public long getAccountAgeDays(Long userId) {
+        LocalDateTime createdAt = accountRepo.findCreatedAtByUserId(userId);
+        if (createdAt == null) {
+            return 0;
+        }
+        return ChronoUnit.DAYS.between(createdAt, LocalDateTime.now());
+    }
+
+    public BigDecimal calculateAmountToBalanceRatio(Long userId, BigDecimal amount) {
+        BigDecimal balance = getCurrentBalance(userId);
+        if (balance == null || balance.compareTo(BigDecimal.ZERO) == 0) {
+            return BigDecimal.ZERO;
+        }
+        return amount.divide(balance, 4, java.math.RoundingMode.HALF_UP);
+    }
+
 }
 
 /*

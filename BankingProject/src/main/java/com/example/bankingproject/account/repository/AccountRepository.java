@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -27,10 +28,16 @@ public interface AccountRepository extends JpaRepository<Account,Long> {
 
     // Add to AccountRepository
 
-    @Query("""
-    SELECT COALESCE(MAX(a.balance), 0) FROM Account a 
-    WHERE a.userId IN :userIds
-    """)
-    BigDecimal findMaxBalanceAmongUsers(@Param("userIds") List<Long> userIds);
 
+    @Query("""
+        SELECT a.balance FROM Account a
+        WHERE a.userId = :userId
+    """)
+    BigDecimal findBalanceByUserId(@Param("userId") Long userId);
+
+    @Query("""
+        SELECT a.createdAt FROM Account a
+        WHERE a.userId = :userId
+    """)
+    LocalDateTime findCreatedAtByUserId(@Param("userId") Long userId);
 }

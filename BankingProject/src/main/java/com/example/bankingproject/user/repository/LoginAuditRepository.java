@@ -24,18 +24,4 @@ public interface LoginAuditRepository extends JpaRepository<LoginAudit, Long> {
             @Param("since") LocalDateTime since
     );
 
-    @Query("""
-        SELECT la FROM LoginAudit la 
-        WHERE la.userId = :userId 
-        AND la.status = 'SUCCESS'
-        ORDER BY la.createdAt DESC
-        LIMIT 1
-    """)
-    LoginAudit findMostRecentSuccessfulLogin(@Param("userId") Long userId);
-
-    List<LoginAudit> findByUserIdAndStatusAndCreatedAtGreaterThanOrderByCreatedAtDesc(
-            Long userId,
-            LoginStatus status,
-            LocalDateTime since
-    );
 }
