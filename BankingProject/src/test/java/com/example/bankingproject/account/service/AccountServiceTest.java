@@ -5,7 +5,6 @@ import com.example.bankingproject.account.entity.Account;
 import com.example.bankingproject.account.exception.AccountNotFoundException;
 import com.example.bankingproject.account.exception.InsufficientBalanceException;
 import com.example.bankingproject.account.repository.AccountRepository;
-import com.example.bankingproject.transaction.repository.TransactionRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -24,9 +23,6 @@ public class AccountServiceTest {
 
     @Mock
     private AccountRepository accountRepository;
-
-    @Mock
-    private TransactionRepository transactionRepository;
 
     @InjectMocks
     private AccountService accountService;
@@ -87,9 +83,8 @@ public class AccountServiceTest {
                 .balance(new BigDecimal("100.00"))
                 .build();
 
-        when(accountRepository.findByUserId(userId)).thenReturn(Optional.of(account));
+        when(accountRepository.findByUserIdForUpdate(userId)).thenReturn(Optional.of(account));
         when(accountRepository.save(any(Account.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(transactionRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         AccountResponse result = accountService.deposit(userId, new BigDecimal("50.00"));
 
@@ -108,7 +103,6 @@ public class AccountServiceTest {
 
         when(accountRepository.findByUserIdForUpdate(userId)).thenReturn(Optional.of(account));
         when(accountRepository.save(any(Account.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(transactionRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         AccountResponse result = accountService.withdraw(userId, new BigDecimal("40.00"));
 
@@ -126,7 +120,6 @@ public class AccountServiceTest {
 
         when(accountRepository.findByUserIdForUpdate(userId)).thenReturn(Optional.of(account));
         when(accountRepository.save(any(Account.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(transactionRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         AccountResponse result = accountService.withdraw(userId, new BigDecimal("100.00"));
 

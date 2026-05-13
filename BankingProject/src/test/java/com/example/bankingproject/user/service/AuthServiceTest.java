@@ -5,6 +5,7 @@ import com.example.bankingproject.common.security.JwtService;
 import com.example.bankingproject.user.dto.LoginRequest;
 import com.example.bankingproject.user.dto.RegisterRequest;
 import com.example.bankingproject.user.entity.User;
+import com.example.bankingproject.user.repository.LoginAuditRepository;
 import com.example.bankingproject.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,6 +34,9 @@ class AuthServiceTest {
 
     @Mock
     private AccountService accountService;
+
+    @Mock
+    private LoginAuditRepository loginAuditRepository;
 
     @InjectMocks
     private AuthService authService;
@@ -75,6 +79,7 @@ class AuthServiceTest {
         assertEquals("jwt-token", token);
         verify(userRepository, times(1)).findByEmail("test@gmail.com");
         verify(passwordEncoder, times(1)).matches("123456", "hashed");
+        verify(loginAuditRepository, times(1)).save(any());
         verify(jwtService, times(1)).generateToken("1");
     }
 }
