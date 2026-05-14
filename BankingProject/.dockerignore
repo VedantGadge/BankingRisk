@@ -3,7 +3,7 @@ target/
 .git/
 .gitignore
 *.md
-.env
+.env.properties
 .env.local
 .idea/
 *.iml

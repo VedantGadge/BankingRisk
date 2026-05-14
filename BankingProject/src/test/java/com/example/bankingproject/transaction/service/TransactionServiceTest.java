@@ -2,6 +2,10 @@ package com.example.bankingproject.transaction.service;
 
 import com.example.bankingproject.account.dto.AccountResponse;
 import com.example.bankingproject.account.service.AccountService;
+import com.example.bankingproject.risk.dto.RiskAnalysisResponse;
+import com.example.bankingproject.risk.dto.RiskContext;
+import com.example.bankingproject.risk.service.RiskAnalysisService;
+import com.example.bankingproject.risk.service.RiskContextBuilderService;
 import com.example.bankingproject.transaction.entity.Transaction;
 import com.example.bankingproject.transaction.enums.TransactionStatus;
 import com.example.bankingproject.transaction.enums.TransactionType;
@@ -27,6 +31,12 @@ class TransactionServiceTest {
     @Mock
     private AccountService accountService;
 
+    @Mock
+    private RiskContextBuilderService riskContextBuilderService;
+
+    @Mock
+    private RiskAnalysisService riskAnalysisService;
+
     @InjectMocks
     private TransactionService transactionService;
 
@@ -36,6 +46,16 @@ class TransactionServiceTest {
         long fromUserId = 1L;
         long toUserId = 2L;
         BigDecimal amount = new BigDecimal("100");
+
+        RiskContext riskContext = RiskContext.builder()
+                .transactionId(1L)
+                .build();
+
+        RiskAnalysisResponse riskResponse = RiskAnalysisResponse.builder()
+                .riskScore(10)
+                .riskLevel("LOW")
+                .explanation("Low risk transfer")
+                .build();
 
         // Mock transaction save to return the transaction with ID
         when(transactionRepository.save(any(Transaction.class)))
@@ -58,6 +78,10 @@ class TransactionServiceTest {
                         .balance(new BigDecimal("600"))
                         .build());
 
+        when(riskContextBuilderService.buildRiskContext(fromUserId, toUserId, amount, 1L))
+                .thenReturn(riskContext);
+        when(riskAnalysisService.analyze(riskContext)).thenReturn(riskResponse);
+
         // Act
         Transaction result = transactionService.transfer(fromUserId, toUserId, amount);
 
@@ -72,8 +96,9 @@ class TransactionServiceTest {
         // Verify interactions - proves orchestration and inter-service coordination
         verify(accountService, times(1)).withdraw(fromUserId, amount);
         verify(accountService, times(1)).deposit(toUserId, amount);
+        verify(riskContextBuilderService, times(1)).buildRiskContext(fromUserId, toUserId, amount, 1L);
+        verify(riskAnalysisService, times(1)).analyze(riskContext);
         verify(transactionRepository, times(2)).save(any(Transaction.class));
     }
 
 }
-

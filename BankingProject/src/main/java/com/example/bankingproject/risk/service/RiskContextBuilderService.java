@@ -10,6 +10,7 @@ import com.example.bankingproject.transaction.service.TransactionService;
 import com.example.bankingproject.user.repository.LoginAuditRepository;
 import com.example.bankingproject.user.repository.ProfileAuditLogRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -17,6 +18,7 @@ import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class RiskContextBuilderService {
 
     // Pulls raw data from the transaction, account, and user-audit layers.
@@ -26,6 +28,9 @@ public class RiskContextBuilderService {
     private final ProfileAuditLogRepository profileAuditLogRepository;
 
     public RiskContext buildRiskContext(Long fromUserId, Long toUserId, BigDecimal amount, Long transactionId) {
+        log.info("[risk-context] start build transactionId={}, fromUserId={}, toUserId={}, amount={}",
+                transactionId, fromUserId, toUserId, amount);
+
         // Use a rolling 24-hour window for the recent activity signals.
         LocalDateTime twentyFourHoursAgo = LocalDateTime.now().minusHours(24);
 
@@ -33,6 +38,8 @@ public class RiskContextBuilderService {
         Long accountAgeDays = accountService.getAccountAgeDays(fromUserId);
         Boolean profileRecentlyChanged =
                 profileAuditLogRepository.countProfileChangesSince(fromUserId, twentyFourHoursAgo) > 0;
+        log.debug("[risk-context] identity source values transactionId={}, accountAgeDays={}, profileRecentlyChanged={}",
+                transactionId, accountAgeDays, profileRecentlyChanged);
 
         IdentityRiskDataDto identity = IdentityRiskDataDto.builder()
                 .fromUserId(fromUserId)
@@ -44,6 +51,8 @@ public class RiskContextBuilderService {
         // Behavior signals: recent transfer activity plus failed login count.
         TransactionRiskDataDto txData = transactionService.getTransactionRiskData(fromUserId);
         Integer failedLoginCount = loginAuditRepository.countFailedLoginsSince(fromUserId, twentyFourHoursAgo);
+        log.debug("[risk-context] behavior source values transactionId={}, txData={}, failedLoginCount={}",
+                transactionId, txData, failedLoginCount);
 
         BehaviorRiskDataDto behavior = BehaviorRiskDataDto.builder()
                 .recentTransactionCount(txData.getRecentTransactionCount())
@@ -55,6 +64,8 @@ public class RiskContextBuilderService {
         // Money-flow signals: current balance and how large the transfer is compared to that balance.
         BigDecimal currentBalance = accountService.getCurrentBalance(fromUserId);
         BigDecimal amountToBalanceRatio = accountService.calculateAmountToBalanceRatio(fromUserId, amount);
+        log.debug("[risk-context] money-flow source values transactionId={}, currentBalance={}, amountToBalanceRatio={}",
+                transactionId, currentBalance, amountToBalanceRatio);
 
         MoneyFlowRiskDataDto moneyFlow = MoneyFlowRiskDataDto.builder()
                 .transactionAmount(amount)
@@ -62,12 +73,15 @@ public class RiskContextBuilderService {
                 .amountToBalanceRatio(amountToBalanceRatio)
                 .build();
 
-        return RiskContext.builder()
+        RiskContext riskContext = RiskContext.builder()
                 .transactionId(transactionId)
                 .identitySignals(toIdentitySignals(identity))
                 .behaviorSignals(toBehaviorSignals(behavior))
                 .moneyFlowSignals(toMoneyFlowSignals(moneyFlow))
                 .build();
+
+        log.info("[risk-context] built transactionId={}, riskContext={}", transactionId, riskContext);
+        return riskContext;
     }
 
     private RiskContext.IdentitySignals toIdentitySignals(IdentityRiskDataDto dto) {

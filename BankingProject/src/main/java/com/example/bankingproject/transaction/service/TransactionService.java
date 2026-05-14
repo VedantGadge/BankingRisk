@@ -1,7 +1,11 @@
 package com.example.bankingproject.transaction.service;
 
 import com.example.bankingproject.account.service.AccountService;
+import com.example.bankingproject.risk.dto.RiskAnalysisResponse;
+import com.example.bankingproject.risk.dto.RiskContext;
 import com.example.bankingproject.risk.dto.TransactionRiskDataDto;
+import com.example.bankingproject.risk.service.RiskAnalysisService;
+import com.example.bankingproject.risk.service.RiskContextBuilderService;
 import com.example.bankingproject.transaction.dto.TransactionResponse;
 import com.example.bankingproject.transaction.entity.Transaction;
 import com.example.bankingproject.transaction.enums.TransactionStatus;
@@ -9,18 +13,23 @@ import com.example.bankingproject.transaction.enums.TransactionType;
 import com.example.bankingproject.transaction.repository.TransactionRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
-import java.time.LocalDateTime;
+
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final AccountService accountService;
+    private final RiskContextBuilderService riskContextBuilderService;
+    private final RiskAnalysisService riskAnalysisService;
 
     @Transactional
     public Transaction transfer(Long fromUserId, Long toUserId, BigDecimal amount){
@@ -54,13 +63,27 @@ public class TransactionService {
 
             // mark success
             tx.setStatus(TransactionStatus.COMPLETED);
+            tx = transactionRepository.save(tx);
+
+            try {
+                RiskContext riskContext = riskContextBuilderService.buildRiskContext(
+                        fromUserId,
+                        toUserId,
+                        amount,
+                        tx.getId()
+                );
+                RiskAnalysisResponse riskResponse = riskAnalysisService.analyze(riskContext);
+                log.info("[transfer-risk] completed transactionId={} riskResponse={}", tx.getId(), riskResponse);
+            } catch (Exception riskException) {
+                log.warn("[transfer-risk] risk pipeline failed transactionId={}", tx.getId(), riskException);
+            }
         }
         catch(Exception e){
             tx.setStatus(TransactionStatus.FAILED);
             transactionRepository.save(tx);
             throw e;
         }
-        return transactionRepository.save(tx);
+        return tx;
     }
 
     public Page<TransactionResponse> getHistory(Long userId, int page, int size){
