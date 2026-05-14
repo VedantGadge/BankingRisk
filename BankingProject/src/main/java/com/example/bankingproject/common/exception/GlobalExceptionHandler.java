@@ -1,5 +1,9 @@
-package com.example.bankingproject.account.exception;
+package com.example.bankingproject.common.exception;
 
+import com.example.bankingproject.account.exception.AccountNotFoundException;
+import com.example.bankingproject.account.exception.InsufficientBalanceException;
+import com.example.bankingproject.account.exception.InvalidAmountException;
+import com.example.bankingproject.account.exception.UserNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -8,11 +12,11 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 
 import java.time.LocalDateTime;
 
-// Tells Spring this class will handle exceptions globally for the whole app.m
+// Tells Spring this class will handle exceptions globally for the whole app.
 @ControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(AccountNotFoundException.class) // Tells Spring to use this method when AccountNotFoundException is thrown.
+    @ExceptionHandler(AccountNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleAccountNotFound(AccountNotFoundException ex){
         return buildResponse(ex.getMessage(), HttpStatus.NOT_FOUND);
     }
@@ -28,8 +32,23 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(UserNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleUserNotFound(InvalidAmountException ex){
+    public ResponseEntity<ErrorResponse> handleUserNotFound(UserNotFoundException ex){
         return buildResponse(ex.getMessage(), HttpStatus.NOT_FOUND);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex){
+        return buildResponse(ex.getMessage(), HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalState(IllegalStateException ex){
+        return buildResponse(ex.getMessage(), HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<ErrorResponse> handleRuntimeException(RuntimeException ex){
+        return buildResponse(ex.getMessage(), HttpStatus.BAD_REQUEST);
     }
 
     // Validation errors (@Valid)
@@ -64,11 +83,3 @@ public class GlobalExceptionHandler {
     }
 
 }
-
-
-/*
- Wnv we have to make a custom exception we extend the RuntimeException ,
- make a constructor with no arguments and call the super constructor and pass the message.
-
-
- */

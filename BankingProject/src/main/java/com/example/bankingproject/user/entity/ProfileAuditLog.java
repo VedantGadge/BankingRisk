@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "profile_audit_logs", indexes = {
-        @Index(name = "idx_user_timestamp", columnList = "user_id, created_at DESC")
+        @Index(name = "idx_profile_audit_user_timestamp", columnList = "user_id, created_at DESC")
 })
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor

@@ -4,6 +4,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts; //Main JWT builder/parser
 import io.jsonwebtoken.security.Keys; //JWT payload (data inside token)
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service; //Generates secure cryptographic keys
 import javax.crypto.SecretKey; //Represents signing key
 import java.util.Base64; //Encodes key properly
@@ -14,11 +15,12 @@ import java.util.Date;
 @Slf4j
 public class JwtService {
 
-    private final String SECRET = "my-super-secret-key-vedant-gadge"; //signing secret
+    @Value("${jwt.secret}")
+    private String secret;
 
-    // converts teh string secret key to cryptographic key
+    // converts the string secret key to cryptographic key
     private SecretKey getSigningKey() {
-        byte[] keyBytes = Base64.getEncoder().encode(SECRET.getBytes());
+        byte[] keyBytes = Base64.getEncoder().encode(secret.getBytes());
         return Keys.hmacShaKeyFor(keyBytes);
     }
 

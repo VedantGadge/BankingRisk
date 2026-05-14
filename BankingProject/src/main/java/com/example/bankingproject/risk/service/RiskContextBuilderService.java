@@ -6,7 +6,7 @@ import com.example.bankingproject.risk.dto.IdentityRiskDataDto;
 import com.example.bankingproject.risk.dto.MoneyFlowRiskDataDto;
 import com.example.bankingproject.risk.dto.RiskContext;
 import com.example.bankingproject.risk.dto.TransactionRiskDataDto;
-import com.example.bankingproject.transaction.service.TransactionService;
+import com.example.bankingproject.transaction.service.TransactionRiskQueryService;
 import com.example.bankingproject.user.repository.LoginAuditRepository;
 import com.example.bankingproject.user.repository.ProfileAuditLogRepository;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +22,7 @@ import java.time.LocalDateTime;
 public class RiskContextBuilderService {
 
     // Pulls raw data from the transaction, account, and user-audit layers.
-    private final TransactionService transactionService;
+    private final TransactionRiskQueryService transactionRiskQueryService;
     private final AccountService accountService;
     private final LoginAuditRepository loginAuditRepository;
     private final ProfileAuditLogRepository profileAuditLogRepository;
@@ -49,8 +49,8 @@ public class RiskContextBuilderService {
                 .build();
 
         // Behavior signals: recent transfer activity plus failed login count.
-        TransactionRiskDataDto txData = transactionService.getTransactionRiskData(fromUserId);
-        Integer failedLoginCount = loginAuditRepository.countFailedLoginsSince(fromUserId, twentyFourHoursAgo);
+        TransactionRiskDataDto txData =
+                transactionRiskQueryService.getTransactionRiskData(fromUserId);        Integer failedLoginCount = loginAuditRepository.countFailedLoginsSince(fromUserId, twentyFourHoursAgo);
         log.debug("[risk-context] behavior source values transactionId={}, txData={}, failedLoginCount={}",
                 transactionId, txData, failedLoginCount);
 

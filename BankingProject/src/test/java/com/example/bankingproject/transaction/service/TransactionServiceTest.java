@@ -2,10 +2,10 @@ package com.example.bankingproject.transaction.service;
 
 import com.example.bankingproject.account.dto.AccountResponse;
 import com.example.bankingproject.account.service.AccountService;
-import com.example.bankingproject.risk.dto.RiskAnalysisResponse;
 import com.example.bankingproject.risk.dto.RiskContext;
 import com.example.bankingproject.risk.service.RiskAnalysisService;
 import com.example.bankingproject.risk.service.RiskContextBuilderService;
+import com.example.bankingproject.transaction.dto.TransactionResponse;
 import com.example.bankingproject.transaction.entity.Transaction;
 import com.example.bankingproject.transaction.enums.TransactionStatus;
 import com.example.bankingproject.transaction.enums.TransactionType;
@@ -51,12 +51,6 @@ class TransactionServiceTest {
                 .transactionId(1L)
                 .build();
 
-        RiskAnalysisResponse riskResponse = RiskAnalysisResponse.builder()
-                .riskScore(10)
-                .riskLevel("LOW")
-                .explanation("Low risk transfer")
-                .build();
-
         // Mock transaction save to return the transaction with ID
         when(transactionRepository.save(any(Transaction.class)))
                 .thenAnswer(invocation -> {
@@ -80,10 +74,9 @@ class TransactionServiceTest {
 
         when(riskContextBuilderService.buildRiskContext(fromUserId, toUserId, amount, 1L))
                 .thenReturn(riskContext);
-        when(riskAnalysisService.analyze(riskContext)).thenReturn(riskResponse);
 
         // Act
-        Transaction result = transactionService.transfer(fromUserId, toUserId, amount);
+        TransactionResponse result = transactionService.transfer(fromUserId, toUserId, amount);
 
         // Assert
         assertNotNull(result);
@@ -97,7 +90,8 @@ class TransactionServiceTest {
         verify(accountService, times(1)).withdraw(fromUserId, amount);
         verify(accountService, times(1)).deposit(toUserId, amount);
         verify(riskContextBuilderService, times(1)).buildRiskContext(fromUserId, toUserId, amount, 1L);
-        verify(riskAnalysisService, times(1)).analyze(riskContext);
+        // Risk analysis is now async (fire-and-forget)
+        verify(riskAnalysisService, times(1)).analyzeAsync(riskContext);
         verify(transactionRepository, times(2)).save(any(Transaction.class));
     }
 

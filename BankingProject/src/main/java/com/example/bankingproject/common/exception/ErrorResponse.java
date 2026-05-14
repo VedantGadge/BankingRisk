@@ -1,4 +1,4 @@
-package com.example.bankingproject.account.exception;
+package com.example.bankingproject.common.exception;
 
 import lombok.Builder;
 import lombok.Data;

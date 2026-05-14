@@ -1,9 +1,7 @@
 package com.example.bankingproject.transaction.service;
 
 import com.example.bankingproject.account.service.AccountService;
-import com.example.bankingproject.risk.dto.RiskAnalysisResponse;
 import com.example.bankingproject.risk.dto.RiskContext;
-import com.example.bankingproject.risk.dto.TransactionRiskDataDto;
 import com.example.bankingproject.risk.service.RiskAnalysisService;
 import com.example.bankingproject.risk.service.RiskContextBuilderService;
 import com.example.bankingproject.transaction.dto.TransactionResponse;
@@ -20,7 +18,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
@@ -32,7 +29,7 @@ public class TransactionService {
     private final RiskAnalysisService riskAnalysisService;
 
     @Transactional
-    public Transaction transfer(Long fromUserId, Long toUserId, BigDecimal amount){
+    public TransactionResponse transfer(Long fromUserId, Long toUserId, BigDecimal amount){
 
         if (fromUserId == null || toUserId == null) {
             throw new IllegalArgumentException("User IDs cannot be null");
@@ -65,25 +62,31 @@ public class TransactionService {
             tx.setStatus(TransactionStatus.COMPLETED);
             tx = transactionRepository.save(tx);
 
-            try {
-                RiskContext riskContext = riskContextBuilderService.buildRiskContext(
-                        fromUserId,
-                        toUserId,
-                        amount,
-                        tx.getId()
-                );
-                RiskAnalysisResponse riskResponse = riskAnalysisService.analyze(riskContext);
-                log.info("[transfer-risk] completed transactionId={} riskResponse={}", tx.getId(), riskResponse);
-            } catch (Exception riskException) {
-                log.warn("[transfer-risk] risk pipeline failed transactionId={}", tx.getId(), riskException);
-            }
+            // Fire-and-forget: risk analysis runs asynchronously on a separate thread
+            // so the transfer API returns immediately without waiting for the LLM call
+            triggerAsyncRiskAnalysis(fromUserId, toUserId, amount, tx.getId());
         }
         catch(Exception e){
             tx.setStatus(TransactionStatus.FAILED);
             transactionRepository.save(tx);
             throw e;
         }
-        return tx;
+        return toResponse(tx);
+    }
+
+    /**
+     * Triggers the risk analysis pipeline on a separate thread.
+     * Errors are logged but never propagate to the caller.
+     */
+    private void triggerAsyncRiskAnalysis(Long fromUserId, Long toUserId, BigDecimal amount, Long transactionId) {
+        try {
+            RiskContext riskContext = riskContextBuilderService.buildRiskContext(
+                    fromUserId, toUserId, amount, transactionId);
+            riskAnalysisService.analyzeAsync(riskContext);
+            log.info("[transfer-risk] async risk analysis triggered transactionId={}", transactionId);
+        } catch (Exception riskException) {
+            log.warn("[transfer-risk] failed to trigger risk pipeline transactionId={}", transactionId, riskException);
+        }
     }
 
     public Page<TransactionResponse> getHistory(Long userId, int page, int size){
@@ -105,21 +108,6 @@ public class TransactionService {
                 .type(tx.getType())
                 .status(tx.getStatus())
                 .createdAt(tx.getCreatedAt())
-                .build();
-    }
-
-    public TransactionRiskDataDto getTransactionRiskData(Long userId) {
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime twentyFourHoursAgo = now.minusHours(24);
-
-        Integer recentTransactionCount = transactionRepository.countCompletedOutboundSince(userId, twentyFourHoursAgo);
-        BigDecimal totalRecentTransactionAmount = transactionRepository.sumCompletedOutboundSince(userId, twentyFourHoursAgo);
-        BigDecimal averageRecentTransactionAmount = transactionRepository.averageCompletedOutboundSince(userId, twentyFourHoursAgo);
-
-        return TransactionRiskDataDto.builder()
-                .recentTransactionCount(recentTransactionCount == null ? 0 : recentTransactionCount)
-                .totalRecentTransactionAmount(totalRecentTransactionAmount)
-                .averageRecentTransactionAmount(averageRecentTransactionAmount)
                 .build();
     }
 

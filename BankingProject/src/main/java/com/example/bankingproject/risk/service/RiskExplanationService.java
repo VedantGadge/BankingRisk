@@ -15,26 +15,43 @@ public class RiskExplanationService {
     private final ChatClient chatClient;
 
     public String explain(RiskContext context, RiskRuleResultDto ruleResult) {
+        Long transactionId = context != null ? context.getTransactionId() : null;
+        log.info("[risk-explanation] llm call start transactionId={} riskLevel={} riskScore={}",
+                transactionId,
+                ruleResult != null ? ruleResult.getRiskLevel() : null,
+                ruleResult != null ? ruleResult.getRiskScore() : null);
+
         try {
             String prompt = buildPrompt(context, ruleResult);
             log.debug("[risk-explanation] llm prompt transactionId={} prompt={}",
-                    context != null ? context.getTransactionId() : null, prompt);
+                    transactionId, prompt);
 
             String response = chatClient.prompt()
                     .user(prompt)
                     .call()
                     .content();
 
+            if (response == null || response.isBlank()) {
+                log.warn("[risk-explanation] llm call returned empty response transactionId={}", transactionId);
+                String fallback = fallbackExplanation(ruleResult);
+                log.info("[risk-explanation] fallback response transactionId={} response={}",
+                        transactionId, fallback);
+                return fallback;
+            }
+
             log.info("[risk-explanation] llm response transactionId={} response={}",
-                    context != null ? context.getTransactionId() : null, response);
+                    transactionId, response);
+            log.info("[risk-explanation] llm call success transactionId={}", transactionId);
             return response;
 
         } catch (Exception e) {
             log.warn("[risk-explanation] Spring AI explanation failed, using fallback explanation transactionId={}",
-                    context != null ? context.getTransactionId() : null, e);
+                    transactionId, e);
             String fallback = fallbackExplanation(ruleResult);
             log.info("[risk-explanation] fallback response transactionId={} response={}",
-                    context != null ? context.getTransactionId() : null, fallback);
+                    transactionId, fallback);
+            log.warn("[risk-explanation] llm call failed transactionId={} reason={}",
+                    transactionId, e.getMessage());
             return fallback;
         }
     }
