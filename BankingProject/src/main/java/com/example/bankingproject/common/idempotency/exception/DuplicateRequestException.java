@@ -1,8 +1,10 @@
 package com.example.bankingproject.common.idempotency.exception;
 
-public class DuplicateRequestException extends RuntimeException {
+import com.example.bankingproject.common.exception.BankingException;
+import org.springframework.http.HttpStatus;
 
+public class DuplicateRequestException extends BankingException {
     public DuplicateRequestException(String message) {
-        super(message);
+        super(message, HttpStatus.CONFLICT, "DUPLICATE_REQUEST");
     }
 }

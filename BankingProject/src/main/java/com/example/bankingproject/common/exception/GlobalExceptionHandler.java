@@ -1,10 +1,5 @@
 package com.example.bankingproject.common.exception;
 
-import com.example.bankingproject.account.exception.AccountNotFoundException;
-import com.example.bankingproject.account.exception.InsufficientBalanceException;
-import com.example.bankingproject.account.exception.InvalidAmountException;
-import com.example.bankingproject.account.exception.UserNotFoundException;
-import com.example.bankingproject.common.idempotency.exception.DuplicateRequestException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -17,44 +12,25 @@ import java.time.LocalDateTime;
 @ControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(AccountNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleAccountNotFound(AccountNotFoundException ex){
-        return buildResponse(ex.getMessage(), HttpStatus.NOT_FOUND);
-    }
-
-    @ExceptionHandler(InsufficientBalanceException.class)
-    public ResponseEntity<ErrorResponse> handleInsufficientBalance(InsufficientBalanceException ex){
-        return buildResponse(ex.getMessage(), HttpStatus.BAD_REQUEST);
-    }
-
-    @ExceptionHandler(InvalidAmountException.class)
-    public ResponseEntity<ErrorResponse> handleInvalidAmount(InvalidAmountException ex){
-        return buildResponse(ex.getMessage(), HttpStatus.BAD_REQUEST);
-    }
-
-    @ExceptionHandler(UserNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleUserNotFound(UserNotFoundException ex){
-        return buildResponse(ex.getMessage(), HttpStatus.NOT_FOUND);
+    // Handles ALL domain exceptions that extend BankingException
+    @ExceptionHandler(BankingException.class)
+    public ResponseEntity<ErrorResponse> handleBankingException(BankingException ex) {
+        return buildResponse(ex.getMessage(), ex.getErrorCode(), ex.getHttpStatus());
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex){
-        return buildResponse(ex.getMessage(), HttpStatus.BAD_REQUEST);
+        return buildResponse(ex.getMessage(), "INVALID_ARGUMENT", HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<ErrorResponse> handleIllegalState(IllegalStateException ex){
-        return buildResponse(ex.getMessage(), HttpStatus.BAD_REQUEST);
-    }
-
-    @ExceptionHandler(DuplicateRequestException.class)
-    public ResponseEntity<ErrorResponse> handleDuplicateRequest(DuplicateRequestException ex) {
-        return buildResponse(ex.getMessage(), HttpStatus.CONFLICT);
+        return buildResponse(ex.getMessage(), "ILLEGAL_STATE", HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ErrorResponse> handleRuntimeException(RuntimeException ex){
-        return buildResponse(ex.getMessage(), HttpStatus.BAD_REQUEST);
+        return buildResponse(ex.getMessage(), "INTERNAL_SERVER_ERROR", HttpStatus.BAD_REQUEST);
     }
 
     // Validation errors (@Valid)
@@ -68,20 +44,20 @@ public class GlobalExceptionHandler {
                 .map(err -> err.getField() + ": " + err.getDefaultMessage())
                 .orElse("Validation error");
 
-        return buildResponse(message, HttpStatus.BAD_REQUEST);
+        return buildResponse(message, "VALIDATION_FAILED", HttpStatus.BAD_REQUEST);
     }
 
     // Catch-all
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneric(Exception ex) {
-        return buildResponse("Something went wrong", HttpStatus.INTERNAL_SERVER_ERROR);
+        return buildResponse("Something went wrong", "UNKNOWN_ERROR", HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
-
     // helper fn
-    private ResponseEntity<ErrorResponse> buildResponse(String message, HttpStatus status) {
+    private ResponseEntity<ErrorResponse> buildResponse(String message, String errorCode, HttpStatus status) {
         ErrorResponse errorResponse = ErrorResponse.builder()
                 .message(message)
+                .errorCode(errorCode)
                 .status(status.value())
                 .timestamp(LocalDateTime.now())
                 .build();

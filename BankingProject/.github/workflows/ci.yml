@@ -7,6 +7,10 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+# CI Hardening: Principle of least privilege
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -27,3 +31,14 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t banking-java:ci .
+
+      # CI Hardening: Security scan for vulnerabilities in dependencies/image
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'banking-java:ci'
+          format: 'table'
+          exit-code: '0' # Set to 1 to fail the build on HIGH/CRITICAL vulnerabilities
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'

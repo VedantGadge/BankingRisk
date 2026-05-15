@@ -1,8 +1,11 @@
 package com.example.bankingproject.account.exception;
 
-public class InsufficientBalanceException extends RuntimeException {
+import com.example.bankingproject.common.exception.BankingException;
+import org.springframework.http.HttpStatus;
+
+public class InsufficientBalanceException extends BankingException {
     public InsufficientBalanceException(String message) {
-        super(message);
+        super(message, HttpStatus.UNPROCESSABLE_ENTITY, "INSUFFICIENT_BALANCE");
     }
 }
 

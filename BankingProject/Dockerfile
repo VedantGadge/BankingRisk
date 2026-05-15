@@ -1,19 +1,22 @@
 # Build stage
 FROM maven:3.9.6-eclipse-temurin-17 AS builder
-
 WORKDIR /app
 
-# Copy pom.xml and source code
+# Dependency resolution layer (caches dependencies if pom.xml doesn't change)
 COPY pom.xml .
-COPY src ./src
+RUN mvn dependency:go-offline -B
 
-# Build the application
+# Source code layer
+COPY src ./src
 RUN mvn clean package -DskipTests
 
-# Runtime stage
-FROM eclipse-temurin:17-jre
-
+# Runtime stage (lightweight alpine image)
+FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
+
+# Create a non-root user and group for security hardening
+RUN addgroup -S spring && adduser -S spring -G spring
+USER spring:spring
 
 # Copy the built jar from builder stage
 COPY --from=builder /app/target/BankingProject-0.0.1-SNAPSHOT.jar app.jar

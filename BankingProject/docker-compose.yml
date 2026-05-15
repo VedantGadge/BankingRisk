@@ -41,8 +41,19 @@ services:
       DDL_AUTO: ${DDL_AUTO:-update}
       SHOW_SQL: ${SHOW_SQL:-false}
       SERVER_PORT: 8080
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     ports:
       - "8080:8080"
+    networks:
+      - banking_network
+
+  # Redis Cache & Rate Limiting
+  redis:
+    image: redis:7-alpine
+    container_name: banking_redis
+    ports:
+      - "6379:6379"
     networks:
       - banking_network
 

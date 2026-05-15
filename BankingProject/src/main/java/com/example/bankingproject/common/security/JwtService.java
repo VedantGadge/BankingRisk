@@ -18,6 +18,16 @@ public class JwtService {
     @Value("${jwt.secret}")
     private String secret;
 
+    @jakarta.annotation.PostConstruct
+    public void validateSecret() {
+        if (secret == null || secret.trim().isEmpty()) {
+            throw new IllegalStateException("JWT secret is not configured. Set JWT_SECRET environment variable.");
+        }
+        if (secret.length() < 32) {
+            throw new IllegalStateException("JWT secret is too weak. It must be at least 32 characters long.");
+        }
+    }
+
     // converts the string secret key to cryptographic key
     private SecretKey getSigningKey() {
         byte[] keyBytes = Base64.getEncoder().encode(secret.getBytes());
