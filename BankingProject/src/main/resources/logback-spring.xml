@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!--
+        Two logging profiles:
+        - default / prod  → structured JSON (machine-readable for Datadog, ELK, Grafana Loki)
+        - test / local    → human-readable console output
+
+        The traceId, method, and uri fields come from MDC (set by RequestCorrelationFilter).
+        They appear automatically in every log line during a request without any extra code.
+    -->
+
+    <!-- ══════════════════════════════════════════ -->
+    <!--  PRODUCTION profile: structured JSON       -->
+    <!-- ══════════════════════════════════════════ -->
+    <springProfile name="prod">
+
+        <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <!-- Standard fields automatically included by LogstashEncoder:
+                     @timestamp, level, logger_name, message, stack_trace -->
+
+                <!-- Custom MDC fields from RequestCorrelationFilter -->
+                <includeMdcKeyName>traceId</includeMdcKeyName>
+                <includeMdcKeyName>method</includeMdcKeyName>
+                <includeMdcKeyName>uri</includeMdcKeyName>
+
+                <!-- App-level context on every line -->
+                <customFields>{"app":"banking-project","env":"production"}</customFields>
+
+                <!-- Remove verbose class/method/line info to reduce log size -->
+                <includeCallerData>false</includeCallerData>
+            </encoder>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="JSON_CONSOLE"/>
+        </root>
+
+        <!-- Suppress noisy framework debug logs -->
+        <logger name="org.hibernate.SQL" level="WARN"/>
+        <logger name="org.springframework.security" level="WARN"/>
+        <logger name="org.springframework.web" level="WARN"/>
+        <logger name="com.zaxxer.hikari" level="WARN"/>
+
+        <!-- Keep our own application logs at INFO -->
+        <logger name="com.example.bankingproject" level="INFO"/>
+
+    </springProfile>
+
+    <!-- ══════════════════════════════════════════ -->
+    <!--  DEV / TEST profile: human-readable        -->
+    <!-- ══════════════════════════════════════════ -->
+    <springProfile name="dev, test, default">
+
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-NO_TRACE}] %logger{36} - %msg%n</pattern>
+            </encoder>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+
+        <logger name="com.example.bankingproject" level="DEBUG"/>
+
+    </springProfile>
+
+</configuration>

@@ -4,6 +4,7 @@ import com.example.bankingproject.account.exception.AccountNotFoundException;
 import com.example.bankingproject.account.exception.InsufficientBalanceException;
 import com.example.bankingproject.account.exception.InvalidAmountException;
 import com.example.bankingproject.account.exception.UserNotFoundException;
+import com.example.bankingproject.common.idempotency.exception.DuplicateRequestException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -44,6 +45,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<ErrorResponse> handleIllegalState(IllegalStateException ex){
         return buildResponse(ex.getMessage(), HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(DuplicateRequestException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateRequest(DuplicateRequestException ex) {
+        return buildResponse(ex.getMessage(), HttpStatus.CONFLICT);
     }
 
     @ExceptionHandler(RuntimeException.class)

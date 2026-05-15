@@ -27,6 +27,10 @@ public class AccountServiceTest {
     @InjectMocks
     private AccountService accountService;
 
+    // ─────────────────────────────────────────────────
+    // createAccount
+    // ─────────────────────────────────────────────────
+
     @Test
     void createAccount_shouldSaveNewAccountWithZeroBalance() {
         Long userId = 1L;
@@ -46,6 +50,10 @@ public class AccountServiceTest {
         assertEquals(0, result.getBalance().compareTo(BigDecimal.ZERO));
         verify(accountRepository, times(1)).save(any(Account.class));
     }
+
+    // ─────────────────────────────────────────────────
+    // getAccount
+    // ─────────────────────────────────────────────────
 
     @Test
     void getAccount_shouldReturnAccountWhenPresent() {
@@ -74,6 +82,10 @@ public class AccountServiceTest {
         assertThrows(AccountNotFoundException.class, () -> accountService.getAccount(userId));
     }
 
+    // ─────────────────────────────────────────────────
+    // deposit
+    // ─────────────────────────────────────────────────
+
     @Test
     void deposit_shouldIncreaseBalance() {
         long userId = 1L;
@@ -84,13 +96,40 @@ public class AccountServiceTest {
                 .build();
 
         when(accountRepository.findByUserIdForUpdate(userId)).thenReturn(Optional.of(account));
-        when(accountRepository.save(any(Account.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(accountRepository.save(any(Account.class))).thenAnswer(inv -> inv.getArgument(0));
 
         AccountResponse result = accountService.deposit(userId, new BigDecimal("50.00"));
 
         assertEquals(0, result.getBalance().compareTo(new BigDecimal("150.00")));
     }
 
+    @Test
+    void deposit_shouldThrowOnZeroAmount() {
+        assertThrows(IllegalArgumentException.class,
+                () -> accountService.deposit(1L, BigDecimal.ZERO));
+        verify(accountRepository, never()).findByUserIdForUpdate(anyLong());
+    }
+
+    @Test
+    void deposit_shouldThrowOnNegativeAmount() {
+        assertThrows(IllegalArgumentException.class,
+                () -> accountService.deposit(1L, new BigDecimal("-50.00")));
+        verify(accountRepository, never()).findByUserIdForUpdate(anyLong());
+    }
+
+    @Test
+    void deposit_shouldThrowWhenAccountNotFound() {
+        long userId = 99L;
+
+        when(accountRepository.findByUserIdForUpdate(userId)).thenReturn(Optional.empty());
+
+        assertThrows(AccountNotFoundException.class,
+                () -> accountService.deposit(userId, new BigDecimal("100.00")));
+    }
+
+    // ─────────────────────────────────────────────────
+    // withdraw
+    // ─────────────────────────────────────────────────
 
     @Test
     void withdraw_shouldDecreaseBalance() {
@@ -102,7 +141,7 @@ public class AccountServiceTest {
                 .build();
 
         when(accountRepository.findByUserIdForUpdate(userId)).thenReturn(Optional.of(account));
-        when(accountRepository.save(any(Account.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(accountRepository.save(any(Account.class))).thenAnswer(inv -> inv.getArgument(0));
 
         AccountResponse result = accountService.withdraw(userId, new BigDecimal("40.00"));
 
@@ -119,7 +158,7 @@ public class AccountServiceTest {
                 .build();
 
         when(accountRepository.findByUserIdForUpdate(userId)).thenReturn(Optional.of(account));
-        when(accountRepository.save(any(Account.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(accountRepository.save(any(Account.class))).thenAnswer(inv -> inv.getArgument(0));
 
         AccountResponse result = accountService.withdraw(userId, new BigDecimal("100.00"));
 
@@ -141,4 +180,20 @@ public class AccountServiceTest {
                 () -> accountService.withdraw(userId, new BigDecimal("100.00")));
     }
 
+    @Test
+    void withdraw_shouldThrowOnZeroAmount() {
+        assertThrows(IllegalArgumentException.class,
+                () -> accountService.withdraw(1L, BigDecimal.ZERO));
+        verify(accountRepository, never()).findByUserIdForUpdate(anyLong());
+    }
+
+    @Test
+    void withdraw_shouldThrowWhenAccountNotFound() {
+        long userId = 99L;
+
+        when(accountRepository.findByUserIdForUpdate(userId)).thenReturn(Optional.empty());
+
+        assertThrows(AccountNotFoundException.class,
+                () -> accountService.withdraw(userId, new BigDecimal("100.00")));
+    }
 }

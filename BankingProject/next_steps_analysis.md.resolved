@@ -1,0 +1,270 @@
+# 🏦 Banking Project — 11/10 Roadmap
+
+## What You Already Have (Your Strengths)
+
+Before getting into what's missing — your current project is **already well above average**. Here's what an interviewer would notice positively:
+
+| ✅ Strength | Why It Matters |
+|---|---|
+| Modular monolith structure (user/account/transaction/risk) | Shows you understand domain-driven design |
+| Pessimistic locking on withdrawals | Shows you know about concurrency in financial systems |
+| Async risk analysis pipeline with LLM integration | Very unique — differentiator project feature |
+| Multi-signal rule engine (identity/behavior/money-flow) | Shows sophisticated fraud detection thinking |
+| JWT stateless auth with filter chain | Industry standard, done correctly |
+| Paginated transaction history | Production-ready pattern |
+| Global exception handler | Centralized error management |
+| Multi-stage Docker build + docker-compose | DevOps awareness |
+| CI pipeline (GitHub Actions) | Automation mindset |
+| Swagger/OpenAPI docs | API-first thinking |
+| Login audit trail + profile change audit | Security audit readiness |
+| Live deployment on Render + Neon | Shows end-to-end ownership |
+
+---
+
+## What's Missing — Organized by Impact
+
+### 🔴 Tier 1: High-Impact, Must-Have (Do These First)
+
+These are things **every senior interviewer will look for** and their absence would be noticeable.
+
+---
+
+#### 1. Idempotency for Transactions (Critical for Banking)
+
+**Why:** Right now, if a client retries a `/transfer` request (network timeout, mobile retry, etc.), you'll process the same transfer twice. In banking, this is a cardinal sin.
+
+**What to do:**
+- Accept an `idempotency-key` header (UUID) on transfer requests
+- Store it in a `processed_requests` table with the response
+- Before processing, check if that key was already processed → return cached response
+- Add a unique constraint + TTL (e.g., 24h expiry)
+
+**Interview talking point:** *"I implemented idempotent transaction processing to handle duplicate submissions safely — a standard requirement in financial APIs."*
+
+---
+
+#### 2. Actuator + Health Checks + Structured Logging
+
+**Why:** Your app has zero observability. No health endpoint, no metrics, no structured logs. Any SRE or backend interviewer will ask about this.
+
+**What to do:**
+- Add `spring-boot-starter-actuator` dependency
+- Expose `/actuator/health`, `/actuator/info`, `/actuator/prometheus`
+- Add a custom health indicator for DB connectivity
+- Switch to structured JSON logging (logback + `logstash-logback-encoder`)
+- Add correlation IDs (MDC `traceId`) to every request via a filter
+
+**Interview talking point:** *"I added production-grade observability with Prometheus-compatible metrics, structured JSON logging, and request correlation IDs for distributed tracing."*
+
+---
+
+#### 3. Meaningful Test Coverage (Currently Very Thin)
+
+**Why:** You have only **4 test files** with minimal scenarios. The `TransactionServiceTest` has a single test. No integration tests, no controller tests, no edge-case coverage. An interviewer will open the `test/` directory and judge.
+
+**What to do:**
+- **TransactionService:** Add tests for — self-transfer rejection, null amount, zero amount, insufficient balance propagation, risk pipeline failure isolation
+- **AccountService:** Add tests for — concurrent withdrawals, exact-balance withdrawal, deposit to non-existent account
+- **AuthService:** Add tests for — duplicate registration, invalid login, password encoding verification
+- **Integration tests:** Add 2-3 `@SpringBootTest` tests using H2 that test the full register → login → deposit → transfer → history flow
+- **Controller tests:** Add `@WebMvcTest` for at least `TransactionController` testing security (no token → 401, valid token → 200)
+- Aim for **~30+ tests** total — enough to demonstrate testing discipline
+
+**Interview talking point:** *"I have unit tests for business logic with Mockito, integration tests for the full transaction lifecycle, and controller-layer tests validating security."*
+
+---
+
+#### 4. Rate Limiting
+
+**Why:** Your API is wide open. Anyone with a valid JWT can hammer your endpoints. This is table stakes for a public banking API.
+
+**What to do:**
+- Use `bucket4j-spring-boot-starter` or a simple `@RateLimiter` with Resilience4j
+- Apply limits: 5 transfers/minute per user, 20 requests/minute globally per IP
+- Return `429 Too Many Requests` with `Retry-After` header
+- Store rate limit state in Redis (you already have the dependency!)
+
+**Interview talking point:** *"I implemented per-user rate limiting using a token-bucket algorithm backed by Redis to prevent API abuse."*
+
+---
+
+### 🟡 Tier 2: Strong Differentiators (Do These to Stand Out)
+
+These separate a "good" project from a "this person thinks like a senior engineer" project.
+
+---
+
+#### 5. Wire Up Kafka (Currently Dead Code)
+
+**Why:** You have `spring-kafka` in your pom.xml and Kafka config in `application.properties`, but **zero Kafka usage anywhere in the code**. An interviewer will notice this immediately. It's worse than not having it — it looks like you added it for the resume without understanding it.
+
+**What to do, Option A (Real Kafka via Docker):**
+- Add Kafka + Zookeeper to `docker-compose.yml`
+- Create a `TransactionEventProducer` that publishes `TransactionCompletedEvent` after every successful transfer
+- Create a `RiskEventConsumer` that consumes these events and triggers risk analysis (replacing the current `@Async` call)
+- This decouples transaction processing from risk analysis via event streaming
+
+**What to do, Option B (Remove it):**
+- If you don't want to implement Kafka, **remove the dependency and config entirely**. Dead dependencies are a red flag.
+
+**Interview talking point (Option A):** *"Transfers are fire-and-forget on the API side. A Kafka event triggers the risk pipeline asynchronously, meaning I can add more consumers (notifications, audit, reporting) without modifying the transaction service."*
+
+---
+
+#### 6. Wire Up Redis (Currently Dead Code)
+
+**Why:** Same problem as Kafka — you have the dependency but zero usage. 
+
+**What to do:**
+- **Idempotency store** — Use Redis to store idempotency keys (from #1 above) with TTL
+- **Rate limiting** — Use Redis as the backing store for rate limits (from #4 above)
+- **Session cache** — Cache frequently-read account balances (read-heavy, write-invalidate pattern)
+- Add Redis to `docker-compose.yml`
+
+---
+
+#### 7. API Versioning
+
+**Why:** Shows you think about backward compatibility, which is critical for real APIs.
+
+**What to do:**
+- Prefix all endpoints with `/api/v1/` (e.g., `/api/v1/auth/login`, `/api/v1/transaction/transfer`)
+- This is a 10-minute change that signals maturity
+
+---
+
+#### 8. Proper Exception Hierarchy
+
+**Why:** Your `AuthService` throws raw `RuntimeException("User already exists!")` and `RuntimeException("Invalid credentials")`. This is a red flag — it means your exception handler catches them in the generic `RuntimeException` handler with status 400, which is wrong.
+
+**What to do:**
+- Create `DuplicateEmailException extends RuntimeException`
+- Create `InvalidCredentialsException extends RuntimeException`
+- Create `AuthenticationFailedException extends RuntimeException`
+- Add specific handlers in `GlobalExceptionHandler` with proper HTTP status codes (409 Conflict, 401 Unauthorized)
+- Return 401 for auth failures, not 400
+
+---
+
+### 🟢 Tier 3: Polish (Do These Last — They Add Shine)
+
+---
+
+#### 9. Docker Compose Hardening
+
+**Current issues:**
+- `version: '3.8'` is deprecated in modern Docker Compose (remove the `version` key entirely)
+- No Redis or Kafka services (if you implement them)
+- No resource limits
+- No restart policies
+- Banking app has no health check
+
+**Improved docker-compose would add:**
+```yaml
+banking-app:
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+  deploy:
+    resources:
+      limits:
+        memory: 512M
+```
+
+---
+
+#### 10. Dockerfile Hardening
+
+**Current issues:**
+- Running as root (security risk)
+- No JVM memory configuration
+- No security labels
+
+**Improvements:**
+```dockerfile
+FROM eclipse-temurin:17-jre
+
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+WORKDIR /app
+COPY --from=builder /app/target/BankingProject-0.0.1-SNAPSHOT.jar app.jar
+USER appuser
+EXPOSE 8080
+ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]
+```
+
+---
+
+#### 11. CI/CD Pipeline Enhancement
+
+**Current CI** only runs `mvn test` and `docker build`. No gating, no caching, no deploy.
+
+**Add:**
+- **Test coverage reporting** with JaCoCo (fail build if <70%)
+- **Docker image push** to GitHub Container Registry on `main` merge
+- **Dependency vulnerability scanning** with `mvn dependency-check:check`
+
+---
+
+#### 12. Remove Learning Comments from Production Code
+
+**Why:** Your code is filled with comments like:
+```java
+// @RequestBody
+// Converts incoming JSON → Java object
+```
+```java
+// Marks class as a database table
+```
+```java
+// compareTo returns: > 0 a > b, = 0 a == b
+```
+
+These are **learning notes**, not production documentation. An interviewer seeing these might think the code is tutorial-level. **Remove all tutorial-style comments** and keep only meaningful Javadoc where it adds value (complex business logic, non-obvious decisions).
+
+---
+
+#### 13. Security Hardening — JWT Secret
+
+**Issue:** Your default JWT secret is hardcoded: `jwt.secret=my-super-secret-key-vedant-gadge`
+
+- This is in your committed `application.properties`
+- The secret is too short for HMAC-SHA
+- Your name is in the secret (unprofessional)
+
+**Fix:** Make it **strictly environment-only** with no default: `jwt.secret=${JWT_SECRET}` — fail fast if not configured.
+
+---
+
+## Priority Execution Order
+
+If you want maximum impact for minimum effort, do them in this order:
+
+| # | Task | Time Estimate | Interview Impact |
+|---|------|---------------|-----------------|
+| 1 | Remove learning comments | 30 min | 🟢 Immediate professionalism boost |
+| 2 | API versioning (`/api/v1/`) | 20 min | 🟢 Shows maturity |
+| 3 | Custom exceptions for auth | 30 min | 🟡 Clean architecture signal |
+| 4 | JWT secret fix | 10 min | 🟢 Security awareness |
+| 5 | Actuator + health checks | 1 hr | 🔴 Every interviewer asks about observability |
+| 6 | Idempotency keys | 2-3 hrs | 🔴 THE banking-specific feature they'll probe |
+| 7 | Rate limiting with Redis | 2 hrs | 🔴 Shows you understand API protection |
+| 8 | Expand test suite to ~30 tests | 3-4 hrs | 🔴 Test coverage is non-negotiable |
+| 9 | Kafka event pipeline | 3-4 hrs | 🟡 Either implement or remove the dependency |
+| 10 | Docker + CI hardening | 1-2 hrs | 🟡 DevOps maturity signal |
+
+---
+
+## Summary
+
+Your project is already **8/10** — the modular architecture, risk engine with LLM, pessimistic locking, and live deployment are genuinely impressive. The gap to **11/10** is mostly about:
+
+1. **Proving you can think about failure modes** (idempotency, rate limiting)
+2. **Proving you test your code** (30+ meaningful tests)
+3. **Proving you ship production-ready systems** (observability, structured logging)
+4. **Removing dead code and learning artifacts** (unused Kafka/Redis deps, tutorial comments)
+
+> [!IMPORTANT]
+> The single most impactful thing you can do right now: **Implement idempotency + expand tests + add actuator**. These three together transform the project from "a well-structured student project" to "this person has shipped production software."
