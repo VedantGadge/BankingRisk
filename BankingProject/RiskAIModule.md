@@ -1,139 +1,118 @@
 PROJECT FEATURE:
-AI-Powered Banking Risk Intelligence & Alert Triage System
+Hybrid AI-Powered Banking Risk Intelligence & Alert Triage System
 
 GOAL:
-Extend the existing Spring Boot banking backend into a bank-side operational intelligence platform that helps fraud/risk/compliance analysts triage suspicious banking activity using AI.
+Extend the existing Spring Boot banking backend into a bank-side operational intelligence platform that helps fraud/risk/compliance analysts triage suspicious banking activity using a Hybrid approach (Deterministic Math + Generative AI).
 
 IMPORTANT:
 This is NOT a customer chatbot.
 This is a bank-internal risk operations system.
 
 ARCHITECTURE STYLE:
+
 - Modular monolith
 - Spring Boot
-- PostgreSQL
-- Spring AI integration
+- PostgreSQL (Core Ledger)
+- Redis (Idempotency & Rate Limiting)
+- Spring AI integration (Generative Explanations)
 - Dockerized + deployed
-- CI/CD enabled
+- CI/CD enabled with Trivy Security Hardening
 
 NEW MODULE:
 risk/
 
 PURPOSE OF RISK MODULE:
-The Risk module acts as an AI-assisted operational intelligence layer.
+The Risk module acts as a Hybrid operational intelligence layer.
 
-It:
-- monitors transaction activity
-- creates risk alerts
-- analyzes suspicious behavior
-- generates AI summaries
-- helps analysts prioritize alerts
-- provides explainable risk reasoning
+It uses a TWO-STEP PROCESS:
+
+1. Deterministic Fast-Path: A mathematical rule engine instantly calculates a risk score based on hard facts (velocity, age, amounts).
+2. Generative Slow-Path: If the deterministic engine flags the transaction as MEDIUM or HIGH risk, an LLM asynchronously generates a human-readable explanation of the fraud pattern.
 
 It DOES NOT:
+
 - directly move money
-- directly freeze accounts
-- autonomously approve/reject transactions
+- autonomously approve/reject transactions using the LLM (LLMs hallucinate, math does not).
 
-Human analysts remain in control.
-
-====================================================
-OVERALL FLOW
-====================================================
-
-1. User initiates transaction
-2. Transaction module creates transaction
-3. Risk module analyzes transaction
-4. Risk module retrieves historical context from DB
-5. Risk context is built
-6. Spring AI analyzes transaction + context
-7. AI generates:
-    - risk score
-    - risk level
-    - summary
-    - reason codes
-    - recommended action
-8. Risk alert stored in DB
-9. Analyst reviews alert if needed
-10. Transaction proceeds or gets flagged
+Human analysts remain in control, but their job is 100x faster because they read the AI explanation instead of digging through raw database logs.
 
 ====================================================
-IMPORTANT AI ARCHITECTURE CONCEPT
+OVERALL HYBRID FLOW
 ====================================================
 
-This system should use:
-STRUCTURED RETRIEVAL
+1. User initiates transaction via API.
+2. Transaction module creates transaction and securely updates the ledger using Optimistic Locking.
+3. Transaction orchestrator triggers the Risk module asynchronously (`@Async`).
+4. Risk module builds a structured `RiskContext` by retrieving historical context from the DB (e.g., account age, transfer velocity).
+5. DETERMINISTIC ENGINE executes in <5ms:
+   - Calculates Risk Score (0-100)
+   - Assigns Risk Level (LOW, MEDIUM, HIGH)
+   - Flags triggered rules (e.g., "Account is younger than 7 days")
+6. Generative AI GATEWAY:
+   - If LOW risk: AI is skipped. Process ends.
+   - If MEDIUM/HIGH risk: Proceed to step 7.
+7. Spring AI analyzes the structured `RiskContext` + triggered rules.
+8. AI generates:
+   - A human-readable fraud summary/explanation.
+9. Risk alert (Score + AI Explanation) is stored in the DB.
+10. Analyst reviews the alert, instantly understanding the context thanks to the AI summary.
 
-NOT just plain prompting.
+====================================================
+IMPORTANT AI ARCHITECTURE CONCEPT: HYBRID RISK
+====================================================
 
-Meaning:
-Before calling the LLM, retrieve contextual evidence from PostgreSQL.
+This system solves the "Black Box AI" problem.
+Banks cannot legally decline transactions just because "the AI said so." They need hard proof.
 
-Examples:
-- recent transactions
-- previous alerts
-- account age
-- transfer velocity
-- beneficiary history
-- failed logins
-- unusual activity patterns
+By splitting the architecture:
 
-This retrieved context is then injected into the AI prompt.
+1. The mathematical Rule Engine provides the legal, auditable reason (e.g., Velocity > $5000/hr).
+2. The AI provides the human translation (e.g., "This appears to be a Bust-Out fraud pattern because a brand new account is maxing out its transfer limits instantly.")
 
 ====================================================
 ARCHITECTURAL LAYERS
 ====================================================
 
-1. Retrieval Layer
-   Responsible for fetching structured evidence from DB.
+1. Context Builder Layer
+   Responsible for fetching structured evidence from the DB.
+   - transactionRepository
+   - riskAlertRepository
+   - accountRepository
 
-Examples:
-- transactionRepository
-- riskAlertRepository
-- accountRepository
+2. Deterministic Reasoning Layer (The Brain)
+   Executes hard mathematical thresholds over the context to output a 0-100 score.
 
-2. Context Builder Layer
-   Converts raw DB data into AI-readable structured context.
-
-Example:
-RiskContext:
-- avg transaction amount
-- login anomalies
-- recent alerts
-- beneficiary trust level
-
-3. AI Reasoning Layer
-   Spring AI + LLM reasons over retrieved evidence.
+3. AI Explainability Layer (The Voice)
+   Spring AI + LLM translates the mathematical triggers into a human-readable case summary.
 
 4. Risk Alert Layer
    Stores generated alerts and analyst workflow state.
 
 ====================================================
-WHY THIS IS BETTER THAN NORMAL CHATBOT
+WHY THIS IS BETTER THAN NORMAL FRAUD ENGINES
 ====================================================
 
 This solves a real banking operational problem:
-Too many alerts and too much manual analyst work.
+Legacy systems output opaque error codes (`ERR-798`). Analysts spend hours looking at raw JSON logs to figure out what `ERR-798` means in this specific context.
 
-The system helps banks:
-- reduce analyst workload
-- prioritize risky activity
-- improve fraud/compliance triage
-- generate explainable case summaries
-- speed up investigations
+This system:
+
+- Instantly blocks fraud with zero latency (using math).
+- Asynchronously generates a full incident report (using AI).
+- Reduces an analyst's triage time from 30 minutes to 30 seconds.
 
 ====================================================
 MODULE STRUCTURE
 ====================================================
 
 risk/
-├── controller/
 ├── dto/
 ├── entity/
 ├── enums/
 ├── repository/
 ├── service/
-├── ai/
+│ ├── RiskAnalysisService (Orchestrator)
+│ └── RiskRuleEngine (Deterministic Math)
 
 ====================================================
 CORE ENTITIES
@@ -141,89 +120,39 @@ CORE ENTITIES
 
 RiskAlert
 Fields:
+
 - id
 - transactionId
-- userId
 - riskLevel
 - riskScore
-- summary
-- reasonCodes
-- recommendedAction
-- status
+- explanation (Generated by AI)
+- triggeredRules (Generated by Rule Engine)
 - createdAt
 
 ====================================================
 RISK LEVELS
 ====================================================
 
-LOW
-MEDIUM
-HIGH
+LOW (Score < 40)
+MEDIUM (Score 40-79)
+HIGH (Score 80-100)
 
 ====================================================
-RISK ALERT STATUSES
-====================================================
-
-CREATED
-TRIAGED
-UNDER_REVIEW
-APPROVED
-REJECTED
-RESOLVED
-
-====================================================
-EXAMPLE AI OUTPUT
+EXAMPLE ALERT RECORD
 ====================================================
 
 {
 "riskLevel": "HIGH",
 "riskScore": 91,
-"summary": "Large transfer to first-time beneficiary after multiple failed logins.",
-"reasonCodes": [
-"NEW_BENEFICIARY",
-"LOGIN_ANOMALY",
-"HIGH_AMOUNT"
-],
-"recommendedAction": "MANUAL_REVIEW"
+"triggeredRules": ["NEW_BENEFICIARY", "LOGIN_ANOMALY", "HIGH_AMOUNT"],
+"explanation": "This transaction matches a classic Account Takeover pattern. A massive transfer was attempted to a first-time beneficiary immediately following multiple failed login attempts on a previously dormant account."
 }
-
-====================================================
-SPRING AI ROLE
-====================================================
-
-Spring AI should:
-- orchestrate prompts
-- call LLMs
-- generate explanations
-- summarize alerts
-- classify severity
-
-It should NOT:
-- directly make financial decisions
-- autonomously move money
-
-====================================================
-IMPORTANT DESIGN PRINCIPLES
-====================================================
-
-1. Strict module boundaries
-2. No cross-module repository access
-3. Transaction module does NOT modify balances directly
-4. AI assists humans, does not replace them
-5. Risk analysis must be explainable
-6. Structured retrieval before AI reasoning
-7. Full auditability
 
 ====================================================
 FUTURE IMPROVEMENTS
 ====================================================
 
-- Kafka event-driven architecture
-- Real ML risk scoring
+- Real ML risk scoring (Replacing the deterministic rule engine with an XGBoost model)
 - Vector DB for historical fraud similarity search
 - Analyst dashboard
-- Case escalation workflows
 - Semantic retrieval of previous fraud cases
-- Real-time streaming analysis
-- Explainable AI dashboards
-- Multi-model risk ensemble

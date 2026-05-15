@@ -22,12 +22,14 @@ public class RiskExplanationService {
                 ruleResult != null ? ruleResult.getRiskScore() : null);
 
         try {
-            String prompt = buildPrompt(context, ruleResult);
-            log.debug("[risk-explanation] llm prompt transactionId={} prompt={}",
-                    transactionId, prompt);
+            String systemText = "You are a senior banking fraud analyst assistant. Your absolute most critical rule is to ONLY use the provided risk data to explain the transaction. You must NEVER invent, hallucinate, or mention rules, signals, or facts that are not explicitly present in the user's input. Keep the explanation concise and professional, mention the top 2 to 4 reasons, and end with a recommendation (approve, review, or block).";
+            String userText = buildPrompt(context, ruleResult);
+            log.debug("[risk-explanation] llm prompt transactionId={} systemPrompt={} userPrompt={}",
+                    transactionId, systemText, userText);
 
             String response = chatClient.prompt()
-                    .user(prompt)
+                    .system(systemText)
+                    .user(userText)
                     .call()
                     .content();
 
@@ -58,10 +60,6 @@ public class RiskExplanationService {
 
     private String buildPrompt(RiskContext context, RiskRuleResultDto ruleResult) {
         return """
-                You are a fraud analyst assistant.
-                
-                Explain why this transaction was flagged using the provided risk data only.
-                
                 Risk score: %d
                 Risk level: %s
                 
@@ -70,12 +68,6 @@ public class RiskExplanationService {
                 
                 Risk context:
                 %s
-                
-                Requirements:
-                - Keep it concise and professional
-                - Mention the top 2 to 4 reasons
-                - Do not invent facts not in the input
-                - End with a recommendation: approve, review, or block
                 """.formatted(
                 ruleResult.getRiskScore(),
                 ruleResult.getRiskLevel(),
