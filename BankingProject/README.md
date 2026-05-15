@@ -1,247 +1,174 @@
-# Banking Project - Core Banking Transaction System
+# Core Banking & Risk AI Transaction System
 
-A modern, scalable core banking transaction system built with Spring Boot 3, PostgreSQL, and Docker. Deployed on Render with production-grade database management on Neon.
+A production-ready, modular monolith banking application that processes financial transactions, evaluates real-time fraud risk using LLM-based logic, and ensures strict consistency through idempotency and rate-limiting.
 
-**Live API:** https://banking-java.onrender.com/swagger-ui/index.html#/
+![Java](https://img.shields.io/badge/Java-17-orange)
+![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.2-brightgreen)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue)
+![Redis](https://img.shields.io/badge/Redis-7-red)
+![Docker](https://img.shields.io/badge/Docker-Ready-blue)
+![Security](https://img.shields.io/badge/Security-Trivy_Hardened-success)
 
----
-
-## 📋 Table of Contents
-
-- [Overview](#overview)
-- [Features](#features)
-- [Tech Stack](#tech-stack)
-- [Quick Start](#quick-start)
-- [Project Structure](#project-structure)
-- [API Documentation](#api-documentation)
-- [Database](#database)
-- [Docker Deployment](#docker-deployment)
-- [Configuration](#configuration)
-- [Development](#development)
-- [Testing](#testing)
-- [Production Deployment](#production-deployment)
-- [Architecture](#architecture)
-- [Contributing](#contributing)
+**Live API Documentation:** [Swagger UI on Render](https://banking-java.onrender.com/swagger-ui/index.html#/)
 
 ---
 
-## 🎯 Overview
+## 🎯 Purpose & The Problem It Solves
 
-This project implements a **modular monolith** architecture that mimics microservices while remaining as a single Spring Boot application. It's designed to handle core banking operations with a focus on:
+**The Problem:**
+In financial systems, moving money is not just about updating two database rows. If a user's network drops during a transfer and they click "Send" twice, they could be charged twice (the "Double Spend" problem). If a malicious actor creates a new account and immediately transfers $10,000, the system must detect it instantly. Furthermore, APIs must be protected from DDoS attacks and brute-force abuse.
 
-- **Atomicity** - Transactions are all-or-nothing
-- **Consistency** - Account balances always remain valid
-- **Idempotency** - Duplicate requests are safely handled
-- **Event-Driven** - Asynchronous processing via Kafka
-- **Security** - JWT-based authentication
-
-The architecture supports easy migration to full microservices in the future.
+**The Solution:**
+This project solves these enterprise challenges by implementing:
+1. **Idempotency (via Redis `SETNX`):** Guarantees exactly-once processing. If a client retries a transaction, the exact same response is safely returned from the Redis cache without hitting the database or double-charging.
+2. **AI-Powered Fraud Engine:** A rule-based scoring engine evaluates account age, transaction velocity, and behavioral signals in real-time. If a transaction crosses a high-risk threshold, it is automatically rejected, and an LLM (OpenRouter) generates an asynchronous human-readable fraud report.
+3. **Optimistic Locking & ACID Compliance:** Transactions are strictly consistent. You cannot transfer money you don't have, and race conditions are mitigated natively by JPA Optimistic Locking.
+4. **Resilience & Protection:** A custom Redis-backed Rate Limiter prevents abuse, failing open if Redis crashes to prioritize API availability.
 
 ---
 
-## ✨ Features
+## 🏗 Architecture & Data Flow
 
-### User Management
-- User registration and login
-- JWT-based authentication
-- Role-based access control (User, Admin)
-- Email uniqueness validation
+### System Architecture
+The application follows a **Modular Monolith** pattern. This provides the deployment simplicity of a single application while keeping domain boundaries (User, Account, Transaction, Risk) strictly separated, allowing for easy extraction into microservices in the future.
 
-### Account Management
-- Create accounts for users
-- View account balance
-- Support for multiple accounts per user
-- Unique account constraint per user
+```mermaid
+graph TD
+    Client([Mobile / Web Client])
+    Gateway[API Gateway / Rate Limiter]
+    
+    subgraph Modular Monolith
+        Auth[Auth Module\nJWT Security]
+        Acc[Account Module\nLedger]
+        Tx[Transaction Module\nOrchestrator]
+        Risk[Risk Engine\nAsync ThreadPool]
+    end
 
-### Transaction Processing
-- **Deposit** - Add funds to account
-- **Withdraw** - Remove funds from account
-- **Transfer** - Move funds between accounts
-- Transaction history and status tracking
+    Redis[(Redis Cache)]
+    Postgres[(PostgreSQL\nCore Database)]
+    LLM([OpenRouter AI\nFraud Explanations])
 
-### Transaction States
-- `INITIATED` - New transaction created
-- `COMPLETED` - Transaction successful
-- `FAILED` - Transaction unsuccessful
-- `REJECTED` - Transaction rejected by fraud check
+    Client -->|HTTP / JSON| Gateway
+    Gateway -->|Check limit| Redis
+    Gateway --> Auth
+    Auth --> Tx
+    
+    Tx <-->|Claim Idempotency Key| Redis
+    Tx -->|Verify Balance| Acc
+    Tx -->|Persist Tx| Postgres
+    Acc -->|Update Ledger| Postgres
+    
+    Tx -.->|@Async Fire-and-Forget| Risk
+    Risk -.->|Fraud Analysis| LLM
+```
 
-### Data Integrity
-- Balance validation (no negative balances)
-- Insufficient funds detection
-- Optimistic locking for concurrency
-- Immutable transaction records
+### Idempotent Transaction Flow (The Double-Spend Solution)
+When a client initiates a transfer, they provide a unique `Idempotency-Key` header (usually a UUID).
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as Transaction API
+    participant Redis as Redis Cache
+    participant DB as PostgreSQL
+
+    Client->>API: POST /api/transaction/transfer <br/> (Header: Idempotency-Key)
+    API->>Redis: SETNX idempotency:{key} PROCESSING
+    
+    alt Key already exists (COMPLETED)
+        Redis-->>API: Return cached JSON response
+        API-->>Client: 200 OK (Cached)
+    else Key is NEW (Claimed)
+        API->>DB: Begin DB Transaction
+        DB-->>API: Verify Balance & Optimistic Lock
+        API->>DB: Deduct from Sender, Add to Receiver
+        API->>DB: Commit Transaction
+        API->>Redis: SET idempotency:{key} COMPLETED <br/> + Store JSON Response (24h TTL)
+        API-->>Client: 200 OK (Processed)
+    end
+```
+
+---
+
+## ✨ Enterprise-Grade Features
+
+*   **Database Schema Versioning:** Handled via **Flyway Migrations**. No dangerous `ddl-auto=update` in production.
+*   **Security Hardening:** 
+    *   JWT secrets are strictly validated via `@PostConstruct` (must be 256-bit+).
+    *   Docker container runs as a least-privilege `non-root` user on Alpine Linux.
+    *   CI Pipeline uses **Trivy** to scan the Docker image for CVE vulnerabilities before deployment.
+*   **Structured Logging & Observability:** Logs are emitted in JSON via Logstash Encoder for easy ingestion by Datadog/ELK. Health probes are exposed via Spring Boot Actuator.
+*   **Graceful Degradation:** Redis rate limiting and idempotency blocks catch `RedisConnectionFailureException`. If Redis dies, the application logs a warning and falls back to processing transactions (availability over strictness), rather than crashing.
 
 ---
 
 ## 🛠 Tech Stack
 
-| Layer | Technology | Version |
-|-------|-----------|---------|
-| **Framework** | Spring Boot | 3.5.13 |
-| **Java** | OpenJDK | 17 LTS |
-| **Database** | PostgreSQL | 15 |
-| **ORM** | Hibernate JPA | 6.6.45 |
-| **Security** | Spring Security + JWT | 0.11.5 |
-| **API Docs** | SpringDoc OpenAPI | 2.7.0 |
-| **Build** | Maven | 3.9.6 |
-| **Container** | Docker | Latest |
-| **Deployment** | Render | Cloud |
-| **DB Hosting** | Neon | PostgreSQL |
+| Layer | Technology |
+|-------|-----------|
+| **Core Framework** | Spring Boot 3.2, Java 17 |
+| **Database** | PostgreSQL 15, Spring Data JPA |
+| **Migrations** | Flyway |
+| **Caching / Distributed Locks** | Redis (Bucket4j concept implemented manually) |
+| **Security** | Spring Security, JWT (jjwt) |
+| **AI Integration** | OpenRouter REST API (GPT/OSS Models) |
+| **Observability** | Spring Boot Actuator, Logback JSON Encoder |
+| **Testing** | JUnit 5, Mockito (40+ Coverage Tests) |
 
 ---
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Java 17+
-- Docker & Docker Compose (optional, for local development)
-- PostgreSQL 15+ (or use Docker)
+- Docker & Docker Compose
+- Java 17+ (If running without Docker)
 
-### Local Development (with Docker)
+### Local Development (Zero Setup via Docker)
 
+1. Clone the repository and configure your environment:
 ```bash
-# Clone the repository
 git clone <repo-url>
 cd BankingProject
-
-# Start all services (PostgreSQL + App)
-docker compose up -d
-
-# Check status
-docker compose ps
-
-# View logs
-docker compose logs -f banking-app
+cp .env.example .env.properties
+# (Optional) Add your OPENROUTER_API_KEY to .env.properties to test AI explanations
 ```
 
-**Access the application:**
-- API: http://localhost:8080
-- Swagger UI: http://localhost:8080/swagger-ui/index.html
-
-### Local Development (without Docker)
-
+2. Spin up the entire infrastructure (Database, Redis, and Application):
 ```bash
-# Ensure PostgreSQL is running on localhost:5432
-
-# Set environment variables
-export DB_HOST=localhost
-export DB_PORT=5432
-export DB_NAME=banking_db
-export DB_USERNAME=postgres
-export DB_PASSWORD=password
-
-# Build and run
-./mvnw clean spring-boot:run
+docker compose up -d --build
 ```
 
----
+The application will automatically run Flyway migrations and start on `http://localhost:8080`.
+*   **API Docs:** `http://localhost:8080/swagger-ui/index.html`
 
-## 📁 Project Structure
-
-```
-BankingProject/
-├── src/
-│   ├── main/
-│   │   ├── java/com/example/bankingproject/
-│   │   │   ├── account/          # Account management module
-│   │   │   │   ├── controller/   # HTTP endpoints
-│   │   │   │   ├── service/      # Business logic
-│   │   │   │   ├── repository/   # Data access
-│   │   │   │   ├── entity/       # JPA entities
-│   │   │   │   └── dto/          # Data transfer objects
-│   │   │   ├── user/             # Auth & user module
-│   │   │   ├── transaction/      # Transaction processing
-│   │   │   ├── common/           # Shared configs & security
-│   │   │   └── BankingProjectApplication.java
-│   │   └── resources/
-│   │       ├── application.properties           # Production config
-│   │       └── application-test.properties      # Test config
-│   └── test/
-│       └── java/com/example/bankingproject/
-│           ├── account/
-│           ├── user/
-│           └── transaction/
-├── Dockerfile                      # Multi-stage build
-├── docker-compose.yml             # Local development stack
-├── .dockerignore                  # Docker build optimization
-├── .env                           # Environment variables
-├── .env.example                   # Environment template
-├── pom.xml                        # Maven dependencies
-├── README.md                      # This file
-├── ARCHITECTURE.md                # System architecture
-└── HOW_TO_RUN_TESTS.md           # Testing guide
-
+### Running Tests
+The project features 40+ high-value tests covering edge cases, negative paths, and risk engine logic.
+```bash
+./mvnw clean test
 ```
 
 ---
 
 ## 📚 API Documentation
 
-### Interactive API Docs
-- **Swagger UI:** https://banking-java.onrender.com/swagger-ui/index.html#/
-- **OpenAPI JSON:** https://banking-java.onrender.com/v3/api-docs
+Once running, access the interactive Swagger UI. Below are the core endpoints:
 
-### Core Endpoints
+#### 1. Authentication
+*   `POST /api/auth/register` - Register a new user
+*   `POST /api/auth/login` - Obtain a JWT token
 
-#### Authentication
-```
-POST /api/auth/register
-  Body: { "email": "user@example.com", "password": "secure_pass" }
-  Response: { "id": 1, "email": "user@example.com", "role": "USER" }
+#### 2. Transactions
+*   `POST /api/transaction/transfer` - Transfer money (Supports `Idempotency-Key` header)
+*   `GET /api/transaction/history` - Get paginated transaction history
 
-POST /api/auth/login
-  Body: { "email": "user@example.com", "password": "secure_pass" }
-  Response: { "token": "eyJhbGc..." }
-```
-
-#### Accounts
-```
-GET /api/accounts/{accountId}
-  Headers: Authorization: Bearer <token>
-  Response: { "id": 1, "userId": 1, "balance": 1000.00, "createdAt": "..." }
-
-POST /api/accounts
-  Headers: Authorization: Bearer <token>
-  Response: { "id": 1, "userId": 1, "balance": 0.00 }
-
-GET /api/accounts/user/{userId}
-  Headers: Authorization: Bearer <token>
-  Response: [{ "id": 1, "balance": 1000.00 }, ...]
-```
-
-#### Transactions
-```
-POST /api/transactions/deposit
-  Headers: Authorization: Bearer <token>
-  Body: { "accountId": 1, "amount": 500.00 }
-  Response: { "id": 1, "type": "DEPOSIT", "status": "COMPLETED" }
-
-POST /api/transactions/withdraw
-  Headers: Authorization: Bearer <token>
-  Body: { "accountId": 1, "amount": 100.00 }
-  Response: { "id": 2, "type": "WITHDRAW", "status": "COMPLETED" }
-
-POST /api/transactions/transfer
-  Headers: Authorization: Bearer <token>
-  Body: { "fromAccountId": 1, "toAccountId": 2, "amount": 250.00 }
-  Response: { "id": 3, "type": "TRANSFER", "status": "COMPLETED" }
-
-GET /api/transactions/{transactionId}
-  Headers: Authorization: Bearer <token>
-  Response: { "id": 1, "type": "DEPOSIT", "amount": 500.00, "status": "COMPLETED" }
-
-GET /api/transactions/account/{accountId}
-  Headers: Authorization: Bearer <token>
-  Response: [{ "id": 1, "type": "DEPOSIT", "amount": 500.00 }, ...]
-```
+#### 3. Accounts
+*   `POST /api/accounts` - Open a new account
+*   `GET /api/accounts/user/{userId}` - View balance
 
 ---
 
-## 🗄 Database
+## 🗄 Database Schema (Flyway V1)
 
-### Database Schema
-
-**Users Table**
 ```sql
 CREATE TABLE users (
   id BIGSERIAL PRIMARY KEY,
@@ -250,403 +177,31 @@ CREATE TABLE users (
   role VARCHAR(255) NOT NULL DEFAULT 'USER',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-```
 
-**Accounts Table**
-```sql
 CREATE TABLE accounts (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT UNIQUE NOT NULL,
-  balance NUMERIC(19,2) NOT NULL DEFAULT 0.00,
+  balance NUMERIC(38,2) NOT NULL DEFAULT 0.00,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
-```
 
-**Transactions Table**
-```sql
 CREATE TABLE transaction (
   id BIGSERIAL PRIMARY KEY,
-  type VARCHAR(255) CHECK (type IN ('DEPOSIT', 'WITHDRAW', 'TRANSFER')),
-  status VARCHAR(255) CHECK (status IN ('INITIATED', 'COMPLETED', 'FAILED')),
+  type VARCHAR(255) NOT NULL,
+  status VARCHAR(255) NOT NULL,
   amount NUMERIC(38,2) NOT NULL,
   from_user_id BIGINT,
   to_user_id BIGINT,
-  created_at TIMESTAMP
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 ```
-
-### Connection Details (Production)
-- **Host:** Neon PostgreSQL
-- **Database:** `banking_db`
-- **Credentials:** Via environment variables
-- **SSL:** Enabled
-
----
-
-## 🐳 Docker Deployment
-
-### Local Development with Docker
-
-```bash
-# Build and start (with PostgreSQL)
-docker compose up -d
-
-# Rebuild after code changes
-docker compose up -d --build
-
-# Stop everything
-docker compose down
-
-# Remove data (fresh start)
-docker compose down -v
-
-# View real-time logs
-docker compose logs -f banking-app
-```
-
-### Docker Compose Services
-
-**PostgreSQL:**
-- Image: `postgres:15-alpine`
-- Port: `5433` (local) → `5432` (container)
-- Volume: `postgres_data` (persistent)
-- Health check: `pg_isready`
-
-**Banking App:**
-- Built from: `Dockerfile` (multi-stage)
-- Port: `8080`
-- Depends on: PostgreSQL (healthy)
-- Networks: `banking_network`
-
----
-
-## ⚙️ Configuration
-
-### Environment Variables
-
-```properties
-# Database
-DB_HOST=localhost              # PostgreSQL host
-DB_PORT=5432                  # PostgreSQL port
-DB_NAME=banking_db            # Database name
-DB_USERNAME=postgres          # Database user
-DB_PASSWORD=password          # Database password
-DB_POOL_SIZE=10              # Connection pool size
-DB_MIN_IDLE=5                # Minimum idle connections
-
-# JPA/Hibernate
-DDL_AUTO=update              # Schema generation (validate/update/create)
-SHOW_SQL=false               # Log SQL queries
-
-# Server
-SERVER_PORT=8080             # Application port
-
-# Kafka (future)
-KAFKA_BOOTSTRAP_SERVERS=localhost:9092
-
-# Redis (future)
-REDIS_HOST=localhost
-REDIS_PORT=6379
-```
-
-### Application Profiles
-
-- **default** - Production (PostgreSQL)
-- **test** - Testing (H2 in-memory)
-
-```bash
-# Run with specific profile
-./mvnw spring-boot:run -Dspring-boot.run.arguments="--spring.profiles.active=test"
-```
-
----
-
-## 🧪 Development
-
-### Building
-
-```bash
-# Maven CLI
-./mvnw clean compile
-
-# Build JAR
-./mvnw clean package
-
-# Build with tests
-./mvnw clean package
-
-# Skip tests
-./mvnw clean package -DskipTests
-```
-
-### Running Tests
-
-```bash
-# Run all tests (uses H2 profile)
-./mvnw test
-
-# Run specific test class
-./mvnw test -Dtest=AccountServiceTest
-
-# Run with coverage
-./mvnw test jacoco:report
-```
-
-For detailed testing info, see [HOW_TO_RUN_TESTS.md](HOW_TO_RUN_TESTS.md)
-
----
-
-## 📊 Testing
-
-### Test Coverage
-
-| Module | Tests | Status |
-|--------|-------|--------|
-| Authentication | 2 | ✅ Pass |
-| Accounts | 7 | ✅ Pass |
-| Transactions | - | ✅ Pass |
-| **Total** | **11** | **✅ All Pass** |
-
-### Test Framework
-- **Testing**: JUnit 5
-- **Mocking**: Mockito
-- **Database**: H2 (in-memory, test profile)
-- **Security**: Spring Security Test
-
----
-
-## 🌐 Production Deployment
-
-### Render Deployment
-
-**Current Status:** ✅ Live
-- **URL:** https://banking-java.onrender.com
-- **Database:** Neon PostgreSQL
-- **SSL:** Automatic
-
-**Deployment Steps:**
-
-1. **Push to GitHub**
-   ```bash
-   git push origin main
-   ```
-
-2. **Create Render Service**
-   - Connect GitHub repository
-   - Select branch: `main`
-   - Build command: `./mvnw clean package -DskipTests`
-   - Start command: `java -jar target/BankingProject-0.0.1-SNAPSHOT.jar`
-
-3. **Set Environment Variables** in Render
-   ```
-   DB_HOST=<neon-db-host>
-   DB_PORT=5432
-   DB_NAME=banking_db
-   DB_USERNAME=<username>
-   DB_PASSWORD=<password>
-   DDL_AUTO=validate
-   SHOW_SQL=false
-   ```
-
-4. **Enable Auto-Deploy**
-   - Render auto-deploys on git push
-
-### Docker Image Deployment
-
-```bash
-# Build image
-docker build -t banking-app:1.0.0 .
-
-# Push to Docker Hub (or other registry)
-docker tag banking-app:1.0.0 your-registry/banking-app:1.0.0
-docker push your-registry/banking-app:1.0.0
-
-# Deploy to cloud (AWS ECS, GCP Cloud Run, etc.)
-docker run -p 8080:8080 \
-  -e DB_HOST=<db-host> \
-  -e DB_PORT=5432 \
-  -e DB_NAME=banking_db \
-  -e DB_USERNAME=<user> \
-  -e DB_PASSWORD=<pass> \
-  your-registry/banking-app:1.0.0
-```
-
----
-
-## 🏗 Architecture
-
-For detailed system architecture, see [ARCHITECTURE.md](ARCHITECTURE.md)
-
-### High-Level Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Client/Frontend                         │
-└────────────────────────┬────────────────────────────────────┘
-                         │ HTTP/JWT
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    API Gateway (Spring)                      │
-│  ├─ JWT Validation                                          │
-│  ├─ Request Routing                                         │
-│  └─ Exception Handling                                      │
-└────┬──────────────┬──────────────┬──────────────────────────┘
-     │              │              │
-     ▼              ▼              ▼
-┌─────────┐  ┌──────────┐  ┌──────────────┐
-│  User   │  │ Account  │  │ Transaction  │
-│ Module  │  │ Module   │  │  Module      │
-├─────────┤  ├──────────┤  ├──────────────┤
-│Controller│  │Controller│  │ Controller   │
-│Service   │  │Service   │  │ Service      │
-│Repository│  │Repository│  │ Repository   │
-└────┬────┘  └────┬─────┘  └────┬─────────┘
-     │            │             │
-     └────────────┼─────────────┘
-                  ▼
-          ┌───────────────────┐
-          │  PostgreSQL 15    │
-          │   (Neon Cloud)    │
-          ├───────────────────┤
-          │ - Users           │
-          │ - Accounts        │
-          │ - Transactions    │
-          └───────────────────┘
-```
-
-### Module Responsibilities
-
-| Module | Responsibility |
-|--------|-----------------|
-| **User** | Authentication, JWT generation, user management |
-| **Account** | Balance management, debit/credit operations |
-| **Transaction** | Transaction creation, state management, history |
-| **Common** | Shared configs, security, exception handling |
 
 ---
 
 ## 🤝 Contributing
-
-### Development Workflow
-
-1. **Create feature branch**
-   ```bash
-   git checkout -b feature/new-feature
-   ```
-
-2. **Make changes**
-   - Follow Java naming conventions
-   - Use Lombok for boilerplate
-   - Write unit tests
-
-3. **Run tests**
-   ```bash
-   ./mvnw test
-   ```
-
-4. **Commit and push**
-   ```bash
-   git commit -m "feat: add new feature"
-   git push origin feature/new-feature
-   ```
-
-5. **Create Pull Request**
-   - Add description
-   - Link related issues
-   - Wait for review
-
-### Code Guidelines
-
-- **Java Version:** 17 LTS
-- **Formatting:** Follow Spring conventions
-- **Testing:** Minimum 80% coverage
-- **Documentation:** Add Javadoc for public APIs
-- **Exceptions:** Use custom exceptions for domain logic
-
----
-
-## 📝 API Response Format
-
-### Success Response
-```json
-{
-  "status": "success",
-  "message": "Operation completed successfully",
-  "data": {
-    "id": 1,
-    "email": "user@example.com",
-    "role": "USER"
-  }
-}
-```
-
-### Error Response
-```json
-{
-  "status": "error",
-  "message": "Invalid request",
-  "errors": [
-    {
-      "field": "email",
-      "message": "Email already exists"
-    }
-  ]
-}
-```
-
----
-
-## 🔐 Security
-
-### Features Implemented
-- ✅ JWT-based authentication (Stateless)
-- ✅ Password encoding (BCrypt)
-- ✅ Role-based authorization
-- ✅ SQL injection prevention (JPA/Prepared statements)
-- ✅ CORS configuration
-- ✅ HTTPS (Render auto-SSL)
-
-### Best Practices
-- Never commit `.env` file
-- Rotate secrets regularly
-- Use strong passwords
-- Enable audit logging
-- Monitor API usage
-
----
-
-## 📞 Support & Issues
-
-For issues, questions, or suggestions:
-1. Check [ARCHITECTURE.md](ARCHITECTURE.md) for design details
-2. Check [HOW_TO_RUN_TESTS.md](HOW_TO_RUN_TESTS.md) for testing
-3. Create GitHub Issue with:
-   - Description of problem
-   - Steps to reproduce
-   - Expected vs actual behavior
-   - Environment details
-
----
-
-## 📄 License
-
-This project is proprietary and confidential.
-
----
-
-## 🚀 Roadmap
-
-- [ ] Add Kafka for event streaming
-- [ ] Add Redis for caching & idempotency
-- [ ] Implement fraud detection module
-- [ ] Add audit logging
-- [ ] Extract modules to microservices
-- [ ] Add GraphQL API
-- [ ] Implement rate limiting
-- [ ] Add metrics & monitoring (Prometheus)
-
----
- 
-**Live URL:** https://banking-java.onrender.com/swagger-ui/index.html#/
-
+1. Create a feature branch (`git checkout -b feature/amazing-feature`)
+2. Ensure tests pass (`./mvnw test`)
+3. Commit changes (`git commit -m 'feat: add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
