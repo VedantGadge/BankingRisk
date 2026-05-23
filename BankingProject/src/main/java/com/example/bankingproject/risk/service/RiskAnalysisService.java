@@ -12,8 +12,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -24,8 +22,65 @@ public class RiskAnalysisService {
     private final RiskAlertRepository riskAlertRepository;
 
     /**
-     * Asynchronous entry point — used by TransactionService so the transfer API
-     * returns immediately without waiting for the LLM call.
+     * Synchronous rule engine evaluation helper to keep engine execution logic encapsulated.
+     */
+    public RiskRuleResultDto evaluateRules(RiskContext context) {
+        return riskRuleEngine.evaluate(context);
+    }
+
+    /**
+     * Phase 1 (Synchronous): Saves the placeholder RiskAlert record synchronously within the 
+     * transfer database transaction context to guarantee immediate persistence.
+     */
+    public RiskAlert createAlertSynchronously(RiskContext context, RiskRuleResultDto ruleResult) {
+        log.info("[risk-analysis] creating placeholder alert synchronously transactionId={}", context.getTransactionId());
+        
+        RiskAlert alert = RiskAlert.builder()
+                .transactionId(context.getTransactionId())
+                .userId(context.getIdentitySignals() != null
+                        ? context.getIdentitySignals().getFromUserId() : null)
+                .riskLevel(RiskLevel.valueOf(ruleResult.getRiskLevel()))
+                .riskScore(ruleResult.getRiskScore())
+                .summary("Explanation pending AI analysis...")
+                .reasonCodes(ruleResult.getTriggeredRules() != null
+                        ? String.join("; ", ruleResult.getTriggeredRules()) : null)
+                .riskStatus(RiskStatus.CREATED)
+                .recommendedAction(deriveRecommendedAction(ruleResult.getRiskLevel()))
+                .build();
+
+        return riskAlertRepository.save(alert);
+    }
+
+    /**
+     * Phase 2 (Asynchronous): Triggered out-of-band on a separate worker thread.
+     * Hits the high-latency Spring AI LLM explanation engine and updates the record safely.
+     */
+    @Async
+    public void generateExplanationAndUpdateAlertAsync(RiskAlert alert, RiskContext context, RiskRuleResultDto ruleResult) {
+        try {
+            log.info("[risk-analysis-async] start async explanation generation transactionId={} alertId={}",
+                    context.getTransactionId(), alert.getId());
+            
+            String explanation = buildExplanation(context, ruleResult);
+            
+            RiskAlert persistedAlert = riskAlertRepository.findById(alert.getId())
+                    .orElseThrow(() -> new IllegalStateException("Alert not found with id: " + alert.getId()));
+            
+            persistedAlert.setSummary(explanation.length() > 2000
+                    ? explanation.substring(0, 2000) : explanation);
+            
+            riskAlertRepository.save(persistedAlert);
+            
+            log.info("[risk-analysis-async] updated alert with explanation transactionId={} alertId={}",
+                    context.getTransactionId(), alert.getId());
+        } catch (Exception e) {
+            log.error("[risk-analysis-async] failed explanation update transactionId={} alertId={}",
+                    context.getTransactionId(), alert.getId(), e);
+        }
+    }
+
+    /**
+     * Asynchronous entry point — remains for backward compatibility.
      */
     @Async
     public void analyzeAsync(RiskContext context) {
@@ -38,7 +93,7 @@ public class RiskAnalysisService {
     }
 
     /**
-     * Synchronous entry point — used by RiskDemoRunner and tests.
+     * Synchronous entry point — kept intact for RiskDemoRunner and existing test setups.
      */
     public RiskAnalysisResponse analyze(RiskContext context) {
         log.info("[risk-analysis] start transactionId={} context={}",
@@ -59,7 +114,6 @@ public class RiskAnalysisService {
                 .explanation(explanation)
                 .build();
 
-        // Persist the risk alert to the database
         persistRiskAlert(context, ruleResult, explanation);
 
         log.info("[risk-analysis] completed transactionId={} response={}",

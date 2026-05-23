@@ -16,6 +16,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import com.example.bankingproject.risk.dto.RiskRuleResultDto;
+import com.example.bankingproject.risk.entity.RiskAlert;
+
 
 import java.math.BigDecimal;
 
@@ -59,8 +62,18 @@ class TransactionServiceTest {
         when(accountService.deposit(toUserId, amount))
                 .thenReturn(AccountResponse.builder().userId(toUserId).balance(new BigDecimal("600")).build());
 
+        RiskRuleResultDto ruleResult = RiskRuleResultDto.builder()
+                .riskLevel("LOW")
+                .riskScore(10)
+                .build();
+        RiskAlert alert = RiskAlert.builder().id(100L).transactionId(1L).build();
+
         when(riskContextBuilderService.buildRiskContext(fromUserId, toUserId, amount, 1L))
                 .thenReturn(riskContext);
+        when(riskAnalysisService.evaluateRules(riskContext))
+                .thenReturn(ruleResult);
+        when(riskAnalysisService.createAlertSynchronously(riskContext, ruleResult))
+                .thenReturn(alert);
 
         TransactionResponse result = transactionService.transfer(fromUserId, toUserId, amount);
 
@@ -74,7 +87,8 @@ class TransactionServiceTest {
         verify(accountService, times(1)).withdraw(fromUserId, amount);
         verify(accountService, times(1)).deposit(toUserId, amount);
         verify(riskContextBuilderService, times(1)).buildRiskContext(fromUserId, toUserId, amount, 1L);
-        verify(riskAnalysisService, times(1)).analyzeAsync(riskContext);
+        verify(riskAnalysisService, times(1)).evaluateRules(riskContext);
+        verify(riskAnalysisService, times(1)).createAlertSynchronously(riskContext, ruleResult);
         verify(transactionRepository, times(2)).save(any(Transaction.class));
     }
 
@@ -149,7 +163,7 @@ class TransactionServiceTest {
         verify(accountService, never()).deposit(anyLong(), any());
 
         // Risk analysis must not run on failed transactions
-        verify(riskAnalysisService, never()).analyzeAsync(any());
+        verify(riskAnalysisService, never()).generateExplanationAndUpdateAlertAsync(any(), any(), any());
     }
 
     // ─────────────────────────────────────────────────
@@ -185,4 +199,42 @@ class TransactionServiceTest {
         assertNotNull(result);
         assertEquals(TransactionStatus.COMPLETED, result.getStatus());
     }
+
+
+        @Test
+    void transfer_shouldHoldTransactionOnHighRisk() {
+        long fromUserId = 1L;
+        long toUserId = 2L;
+        BigDecimal amount = new BigDecimal("15000");
+
+        RiskContext riskContext = RiskContext.builder().transactionId(1L).build();
+        RiskRuleResultDto ruleResult = RiskRuleResultDto.builder()
+                .riskLevel("HIGH")
+                .riskScore(95)
+                .build();
+        RiskAlert alert = RiskAlert.builder().id(100L).transactionId(1L).build();
+
+        when(transactionRepository.save(any(Transaction.class)))
+                .thenAnswer(inv -> {
+                    Transaction t = inv.getArgument(0);
+                    t.setId(1L);
+                    return t;
+                });
+
+        when(riskContextBuilderService.buildRiskContext(fromUserId, toUserId, amount, 1L))
+                .thenReturn(riskContext);
+        when(riskAnalysisService.evaluateRules(riskContext))
+                .thenReturn(ruleResult);
+        when(riskAnalysisService.createAlertSynchronously(riskContext, ruleResult))
+                .thenReturn(alert);
+
+        TransactionResponse result = transactionService.transfer(fromUserId, toUserId, amount);
+
+        assertNotNull(result);
+        assertEquals(TransactionStatus.PENDING_REVIEW, result.getStatus());
+        verify(accountService, times(1)).withdraw(fromUserId, amount);
+        verify(accountService, never()).deposit(toUserId, amount);
+        verify(riskAnalysisService, times(1)).generateExplanationAndUpdateAlertAsync(alert, riskContext, ruleResult);
+    }
+
 }
