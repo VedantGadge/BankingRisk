@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 public class RiskExplanationService {
 
     private final ChatClient chatClient;
+    private final PiiMaskingService piiMaskingService;
 
     public String explain(RiskContext context, RiskRuleResultDto ruleResult) {
         Long transactionId = context != null ? context.getTransactionId() : null;
@@ -22,8 +23,11 @@ public class RiskExplanationService {
                 ruleResult != null ? ruleResult.getRiskScore() : null);
 
         try {
+            // Securely anonymize the customer RiskContext before sending to the external LLM
+            RiskContext anonymizedContext = piiMaskingService.anonymizeContext(context);
+
             String systemText = "You are a senior banking fraud analyst assistant. Your absolute most critical rule is to ONLY use the provided risk data to explain the transaction. You must NEVER invent, hallucinate, or mention rules, signals, or facts that are not explicitly present in the user's input. Keep the explanation concise and professional, mention the top 2 to 4 reasons, and end with a recommendation (approve, review, or block).";
-            String userText = buildPrompt(context, ruleResult);
+            String userText = buildPrompt(anonymizedContext, ruleResult);
             log.debug("[risk-explanation] llm prompt transactionId={} systemPrompt={} userPrompt={}",
                     transactionId, systemText, userText);
 
@@ -41,10 +45,14 @@ public class RiskExplanationService {
                 return fallback;
             }
 
+            // Securely rehydrate anonymized tokens back to actual values locally before saving/serving
+            String rehydratedResponse = piiMaskingService.rehydrateText(response);
+            piiMaskingService.clearRegistry(); // Clear the thread-local token cache
+
             log.info("[risk-explanation] llm response transactionId={} response={}",
-                    transactionId, response);
+                    transactionId, rehydratedResponse);
             log.info("[risk-explanation] llm call success transactionId={}", transactionId);
-            return response;
+            return rehydratedResponse;
 
         } catch (Exception e) {
             log.warn("[risk-explanation] Spring AI explanation failed, using fallback explanation transactionId={}",
