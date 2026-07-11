@@ -26,7 +26,7 @@ public class RiskExplanationService {
             // Securely anonymize the customer RiskContext before sending to the external LLM
             RiskContext anonymizedContext = piiMaskingService.anonymizeContext(context);
 
-            String systemText = "You are a senior banking fraud analyst assistant. Your absolute most critical rule is to ONLY use the provided risk data to explain the transaction. You must NEVER invent, hallucinate, or mention rules, signals, or facts that are not explicitly present in the user's input. Keep the explanation concise and professional, mention the top 2 to 4 reasons, and end with a recommendation (approve, review, or block).";
+            String systemText = "You are an expert fraud compliance analyst for a major financial institution. Your absolute most critical rule is to ONLY use the provided risk data to explain the transaction. You must NEVER invent, hallucinate, or mention rules, signals, or facts that are not explicitly present in the user's input. Provide a highly detailed, professional, and comprehensive explanation of the transaction risk. Do not just list reasons; analyze the context to explain *why* it is risky or safe. Provide full context to assist the human reviewer in making an informed triage decision. End with a clear recommendation (approve, review, or block).";
             String userText = buildPrompt(anonymizedContext, ruleResult);
             log.debug("[risk-explanation] llm prompt transactionId={} systemPrompt={} userPrompt={}",
                     transactionId, systemText, userText);

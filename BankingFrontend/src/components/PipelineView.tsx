@@ -146,8 +146,13 @@ export function PipelineView({ stage, transaction, result }: Props) {
                     {result?.score} / 100
                   </span>
                 </div>
-                <div style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', borderLeft: `3px solid ${result?.score > 50 ? 'var(--warning)' : 'var(--success)'}` }}>
-                  <p style={{ fontStyle: 'italic', fontSize: '0.95rem', color: '#e2e8f0' }}>"{result?.justification}"</p>
+                <div style={{ padding: '1.25rem', background: '#ffffff', borderRadius: '8px', border: '1px solid var(--border-color)', borderLeft: `4px solid ${result?.score >= 70 ? 'var(--danger)' : result?.score >= 40 ? 'var(--warning)' : 'var(--success)'}`, boxShadow: '0 1px 2px 0 rgba(0,0,0,0.05)' }}>
+                  <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: '0.75rem', fontWeight: 600 }}>
+                    AI Analyst Justification & Context
+                  </div>
+                  <div style={{ fontSize: '0.95rem', color: 'var(--text-main)', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
+                    {result?.justification}
+                  </div>
                 </div>
               </div>
             )}
