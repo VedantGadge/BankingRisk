@@ -47,6 +47,8 @@ services:
       SERVER_PORT: 8080
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      # Override datasource URL to disable SSL locally
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-banking_db}?sslmode=disable
       # Spring AI connection to local Ollama container
       SPRING_AI_OPENAI_BASE_URL: http://ollama:11434/v1
       SPRING_AI_OPENAI_API_KEY: ollama
