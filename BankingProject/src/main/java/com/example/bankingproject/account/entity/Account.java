@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 public class Account {
 
     @Id
+    @Setter(AccessLevel.NONE)
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 

@@ -30,6 +30,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
+      ollama:
+        condition: service_started
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
@@ -43,6 +47,10 @@ services:
       SERVER_PORT: 8080
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      # Spring AI connection to local Ollama container
+      SPRING_AI_OPENAI_BASE_URL: http://ollama:11434/v1
+      SPRING_AI_OPENAI_API_KEY: ollama
+      SPRING_AI_OPENAI_CHAT_OPTIONS_MODEL: llama3.2
     ports:
       - "8080:8080"
     networks:
@@ -57,8 +65,21 @@ services:
     networks:
       - banking_network
 
+  # Ollama Local LLM Runner
+  ollama:
+    image: ollama/ollama:latest
+    container_name: banking_ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    expose:
+      - "11434"
+    networks:
+      - banking_network
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  ollama_data:
 
 networks:
   banking_network:

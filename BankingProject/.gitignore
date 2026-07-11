@@ -33,8 +33,11 @@ build/
 .vscode/
 
 ### Environment Variables ###
+.env
 .env.properties
 .env.local
 
 **/node_modules/
 **/.next/
+
+*.key
