@@ -15,7 +15,7 @@ FROM eclipse-temurin:17-jre
 WORKDIR /app
 
 # Create a non-root user and group for security hardening
-RUN addgroup -S spring && adduser -S spring -G spring
+RUN groupadd -r spring && useradd -r -g spring spring
 USER spring:spring
 
 # Copy the built jar from builder stage
