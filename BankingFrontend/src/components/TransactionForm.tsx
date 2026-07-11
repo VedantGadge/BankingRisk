@@ -9,7 +9,7 @@ interface Props {
 
 export function TransactionForm({ onSubmit }: Props) {
   const [formData, setFormData] = useState<TransactionData>({
-    accountId: 'ACC-88392-XX',
+    accountId: '2', // We use accountId to store the target userId internally in App.tsx
     amount: '450.00',
     transactionType: 'TRANSFER',
     ipAddress: '192.168.1.45',
@@ -36,13 +36,14 @@ export function TransactionForm({ onSubmit }: Props) {
       
       <form onSubmit={handleSubmit}>
         <div className="input-group">
-          <label className="input-label">Account ID</label>
+          <label className="input-label">Destination User ID</label>
           <input 
-            type="text" 
+            type="number" 
             name="accountId"
             className="input-field" 
             value={formData.accountId}
             onChange={handleChange}
+            placeholder="e.g. 2"
             required
           />
         </div>
