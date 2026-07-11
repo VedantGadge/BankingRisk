@@ -22,6 +22,8 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/swagger-ui/**",
                         "/swagger-ui.html"
                 );
+    }
+
     @Override
     public void addCorsMappings(org.springframework.web.servlet.config.annotation.CorsRegistry registry) {
         registry.addMapping("/**")
